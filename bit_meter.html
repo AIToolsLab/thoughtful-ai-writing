@@ -1,0 +1,1020 @@
+<title>Thoughtful Writing Bit Meter</title>
+<meta name="description" content="Prototype writing assistant that scores every word in bits and shows how many came from the writer.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<style>
+/* Layout: a writing sheet on the left with the choice row under it (as in the paper sketch),
+   Thinking Box and meter on the right, and a full-width bit strip that reads like the text itself. */
+:root {
+  --bg: #eceff4;
+  --sheet: #ffffff;
+  --ink: #161c28;
+  --muted: #5a6476;
+  --line: #d3d9e3;
+  --soft: #f4f6f9;
+  --ghost: #98a1b1;
+  --typed: #2747d0;
+  --chose: #0a8571;
+  --ai: #b07510;
+  --gen: #c03a54;
+  --steer: #6a4bc4;
+  --focus: #2747d0;
+  --serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f131a; --sheet: #171c25; --ink: #e5e8ee; --muted: #9aa3b3; --line: #2b3342; --soft: #1d2330;
+    --ghost: #5f697b; --typed: #7d93ff; --chose: #3cc6ad; --ai: #e2a948; --gen: #f0738a; --steer: #a68cf2; --focus: #7d93ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f131a; --sheet: #171c25; --ink: #e5e8ee; --muted: #9aa3b3; --line: #2b3342; --soft: #1d2330;
+  --ghost: #5f697b; --typed: #7d93ff; --chose: #3cc6ad; --ai: #e2a948; --gen: #f0738a; --steer: #a68cf2; --focus: #7d93ff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--ink); }
+body { font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 48px; display: flex; flex-direction: column; gap: 18px; }
+h1, h2 { margin: 0; text-wrap: balance; }
+h1 { font-family: var(--serif); font-weight: 600; font-size: 1.85rem; letter-spacing: -0.01em; line-height: 1.15; }
+h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); font-weight: 600; }
+p { margin: 0; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button {
+  border: 1px solid var(--line); background: var(--sheet); border-radius: 6px; padding: 6px 12px; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
+button:disabled { opacity: 0.5; cursor: default; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+select, input[type="text"], input[type="url"] {
+  border: 1px solid var(--line); background: var(--sheet); border-radius: 6px; padding: 5px 8px; min-width: 0;
+}
+
+.top { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-end; justify-content: space-between; }
+.brand { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 62ch; }
+.sub { color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.controls label { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+
+.note {
+  display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between;
+  border: 1px dashed var(--line); border-radius: 8px; padding: 10px 14px; color: var(--muted); background: var(--soft);
+}
+
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
+@media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+.writer { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.sheet {
+  position: relative; background: var(--sheet); border: 1px solid var(--line); border-radius: 10px;
+  padding: 26px 30px; min-height: 280px; cursor: text;
+}
+.sheet:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 16%, transparent); }
+.doc {
+  font-family: var(--serif); font-size: 1.22rem; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere;
+  max-width: 68ch;
+}
+.doc .u { border-bottom: 2px solid transparent; }
+.show-src .doc .u.typed { border-bottom-color: color-mix(in srgb, var(--typed) 55%, transparent); }
+.show-src .doc .u.chose { border-bottom-color: color-mix(in srgb, var(--chose) 70%, transparent); }
+.show-src .doc .u.accepted { border-bottom-color: color-mix(in srgb, var(--ai) 70%, transparent); }
+.show-src .doc .u.generated { border-bottom-color: color-mix(in srgb, var(--gen) 70%, transparent); }
+.doc .buf { color: var(--ink); }
+.doc .ghost { color: var(--ghost); }
+.doc .placeholder { color: var(--ghost); font-style: italic; }
+.caret { display: inline-block; width: 2px; height: 1.15em; margin: 0 -1px; background: var(--focus); vertical-align: -0.2em; visibility: hidden; }
+.sheet:focus-within .caret { visibility: visible; animation: blink 1.05s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .sheet:focus-within .caret { animation: none; } }
+.cap {
+  position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; resize: none; overflow: hidden;
+}
+
+.status { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; color: var(--muted); font-size: 0.86rem; min-height: 1.5em; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 2px 10px; font-weight: 500;
+  background: var(--soft); border: 1px solid var(--line); color: var(--ink);
+}
+.pill.fork { background: color-mix(in srgb, var(--typed) 14%, var(--sheet)); border-color: color-mix(in srgb, var(--typed) 45%, transparent); color: var(--typed); }
+.pill.err { background: color-mix(in srgb, var(--gen) 12%, var(--sheet)); border-color: color-mix(in srgb, var(--gen) 45%, transparent); color: var(--gen); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 560px) { .slots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.slot {
+  display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 9px 11px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--sheet); min-width: 0;
+}
+.slot .k { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.slot .w { font-family: var(--serif); font-size: 1.12rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot .pv { color: var(--ghost); font-weight: 400; }
+.slot .pb { height: 3px; border-radius: 2px; background: var(--soft); overflow: hidden; }
+.slot .pb i { display: block; height: 100%; background: var(--muted); }
+.slots.fork .slot { border-color: color-mix(in srgb, var(--typed) 50%, transparent); }
+.slots.fork .slot .pb i { background: var(--typed); }
+.slots.quiet .slot { opacity: 0.62; }
+.slots.quiet .slot:hover { opacity: 1; }
+.slot.empty { visibility: hidden; }
+.keys { color: var(--muted); font-size: 0.82rem; }
+kbd {
+  font-family: var(--mono); font-size: 0.76rem; border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 4px; padding: 0 5px; background: var(--sheet); color: var(--ink);
+}
+
+.side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.panel { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel textarea {
+  width: 100%; min-height: 110px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+  background: var(--soft); font-family: var(--serif); font-size: 1rem; line-height: 1.5;
+}
+.hint { color: var(--muted); font-size: 0.82rem; }
+
+.big { display: flex; align-items: baseline; gap: 10px; }
+.big .n { font-family: var(--mono); font-size: 2.3rem; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.big .l { color: var(--muted); font-size: 0.84rem; line-height: 1.3; }
+.stack { display: flex; height: 12px; border-radius: 3px; overflow: hidden; background: var(--soft); }
+.stack span { display: block; height: 100%; }
+.stack-key { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.78rem; color: var(--muted); }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+dl.kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 0; }
+dl.kv dt { color: var(--muted); }
+dl.kv dd { margin: 0; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+dl.kv .sep { grid-column: 1 / -1; border-top: 1px solid var(--line); }
+
+.strip-wrap { display: flex; flex-direction: column; gap: 10px; }
+.strip-head { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; justify-content: space-between; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--muted); }
+.strip-box { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 0; }
+.axis { position: relative; height: 120px; font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
+.axis span { position: absolute; right: 8px; transform: translateY(-50%); }
+.strip {
+  overflow-x: auto; display: flex; gap: 3px; align-items: flex-end; height: 148px; padding-bottom: 4px;
+  background-image: repeating-linear-gradient(to top, transparent 0 23px, var(--line) 23px 24px);
+  background-size: 100% 96px; background-repeat: no-repeat; background-position: 0 4px;
+  scrollbar-width: thin;
+}
+.strip-pad { height: 120px; }
+.col { display: flex; flex-direction: column; align-items: stretch; gap: 4px; flex: 0 0 auto; min-width: 12px; }
+.col .bar {
+  position: relative; height: 0; min-height: 2px; margin: 0 auto; width: 100%; max-width: 46px; min-width: 10px;
+  background: color-mix(in srgb, var(--c) 20%, transparent); border-top: 2px solid var(--c); border-radius: 2px 2px 0 0;
+}
+.col .bar .hum { position: absolute; left: 0; right: 0; bottom: 0; background: var(--c); }
+.col .bar.over::after { content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 3px; background: var(--sheet); }
+.col .bar.pending { background: transparent; border: 1px dashed var(--line); }
+.col .lbl { font-family: var(--serif); font-size: 0.86rem; white-space: nowrap; text-align: center; padding: 0 2px; height: 24px; line-height: 24px; }
+.col.typed { --c: var(--typed); } .col.chose { --c: var(--chose); } .col.accepted { --c: var(--ai); } .col.generated { --c: var(--gen); }
+.strip-empty { color: var(--muted); align-self: center; padding: 0 12px; }
+
+details.panel > summary { cursor: pointer; font-weight: 600; list-style-position: outside; }
+details.panel[open] > summary { margin-bottom: 4px; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px 22px; }
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field > span { color: var(--muted); font-size: 0.84rem; }
+.field .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.field input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--typed); }
+.field input[type="text"], .field input[type="url"] { width: 100%; }
+
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 560px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+td code, p code { font-family: var(--mono); font-size: 0.86em; background: var(--soft); padding: 1px 4px; border-radius: 3px; }
+.prose { max-width: 72ch; display: flex; flex-direction: column; gap: 10px; }
+pre.log {
+  margin: 0; max-height: 320px; overflow: auto; background: var(--soft); border-radius: 6px; padding: 10px 12px;
+  font-family: var(--mono); font-size: 0.76rem; line-height: 1.45; white-space: pre;
+}
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.toast { color: var(--chose); font-size: 0.84rem; }
+</style>
+
+<div class="wrap" id="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Thoughtful Writing Bit Meter</h1>
+      <p class="sub">Every word is scored in bits by the language model. The meter shows how many of those bits came from you and how many came from the model.</p>
+    </div>
+    <div class="controls">
+      <label for="mode">Condition
+        <select id="mode">
+          <option value="assist">Assisted: ghost text + choices</option>
+          <option value="plain">Plain typing</option>
+          <option value="generate">Generate paragraphs</option>
+        </select>
+      </label>
+      <button id="newBtn" type="button">New session</button>
+    </div>
+  </header>
+
+  <div class="note" id="exampleNote">
+    <span>Example session: a simulated writer at the default settings, using the built-in demo model. Hover the bars below to inspect each word.</span>
+    <button class="primary" id="startBtn" type="button">Start writing</button>
+  </div>
+
+  <main class="grid">
+    <section class="writer" aria-label="Writing area">
+      <div class="sheet" id="sheet">
+        <div class="doc" id="doc" aria-live="off"></div>
+        <textarea id="cap" class="cap" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Type here"></textarea>
+      </div>
+      <div class="status" id="status"></div>
+      <div class="slots" id="slots"></div>
+      <div class="btn-row" id="genRow" hidden>
+        <button class="primary" id="genBtn" type="button">Generate a paragraph</button>
+        <span class="hint">Write your prompt in the Thinking Box first. Generated words count 0 human bits; the prompt counts as steering bits.</span>
+      </div>
+      <p class="keys" id="keys">
+        <kbd>Tab</kbd> accept next word · <kbd>Shift</kbd>+<kbd>Tab</kbd> accept the grey phrase · <span id="pickKeyLabel"><kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>4</kbd></span> choose an option · type letters to filter · <kbd>Esc</kbd> hide suggestions
+      </p>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <h2><label for="notes">Thinking Box</label></h2>
+        <textarea id="notes" placeholder="What are you trying to say? Notes here steer the suggestions."></textarea>
+        <p class="hint">Notes steer the model and count as your steering bits.</p>
+      </section>
+      <section class="panel" aria-label="Meter">
+        <h2>Meter</h2>
+        <div class="big"><span class="n" id="controlPct">0%</span><span class="l">human share<br>of all bits</span></div>
+        <div class="stack" id="stack" aria-hidden="true"></div>
+        <div class="stack-key">
+          <span><i class="sw" style="background:var(--typed)"></i>typed</span>
+          <span><i class="sw" style="background:var(--chose)"></i>chosen</span>
+          <span><i class="sw" style="background:var(--steer)"></i>steering</span>
+          <span><i class="sw" style="background:var(--ai)"></i>model</span>
+        </div>
+        <dl class="kv" id="kv"></dl>
+      </section>
+    </aside>
+  </main>
+
+  <section class="panel strip-wrap" aria-label="Bits per word">
+    <div class="strip-head">
+      <h2>Bits per word</h2>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--typed)"></i>Typed</span>
+        <span><i class="sw" style="background:var(--chose)"></i>Chosen from options</span>
+        <span><i class="sw" style="background:var(--ai)"></i>Accepted grey text</span>
+        <span><i class="sw" style="background:var(--gen)"></i>Generated</span>
+        <span>Solid = your bits · pale = model's share</span>
+      </div>
+    </div>
+    <div class="strip-box">
+      <div class="axis" aria-hidden="true">
+        <span style="top:4px">20 bits</span><span style="top:28px">15</span><span style="top:52px">10</span><span style="top:76px">5</span><span style="top:100px">0</span>
+      </div>
+      <div class="strip" id="strip"></div>
+    </div>
+  </section>
+
+  <details class="panel" id="settings">
+    <summary>Settings</summary>
+    <div class="settings-grid">
+      <label class="field" for="thr"><span>Ask me to choose when uncertainty is at least</span>
+        <span class="row"><input type="range" id="thr" min="0.5" max="6" step="0.1" value="2.5"><b class="mono" id="thrOut">2.5 bits</b></span>
+      </label>
+      <label class="field" for="ghostMax"><span>Longest grey phrase</span>
+        <span class="row"><input type="range" id="ghostMax" min="1" max="12" step="1" value="6"><b class="mono" id="ghostOut">6 words</b></span>
+      </label>
+      <label class="field" for="kOpt"><span>Options shown</span>
+        <select id="kOpt"><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select>
+      </label>
+      <label class="field" for="pickKeys"><span>Choice keys</span>
+        <select id="pickKeys">
+          <option value="alt">Alt + 1–4 (always)</option>
+          <option value="bare">1–4 at a fork, digits otherwise</option>
+        </select>
+      </label>
+      <label class="field" for="showSrc"><span>Underline words by source</span>
+        <span class="row"><input type="checkbox" id="showSrc" checked> <span class="hint">Shows who supplied each word while writing</span></span>
+      </label>
+      <label class="field" for="backend"><span>Model</span>
+        <select id="backend">
+          <option value="demo">Built-in demo model (trigram, runs in the page)</option>
+          <option value="vllm">Class vLLM server (Qwen)</option>
+        </select>
+        <span class="hint" id="backendHint"></span>
+      </label>
+      <label class="field" for="vurl"><span>vLLM address</span>
+        <input type="url" id="vurl" value="https://vllm.thoughtful-ai.com" spellcheck="false">
+      </label>
+      <div class="field"><span>vLLM model name</span>
+        <span class="row"><input type="text" id="vmodel" list="vmodels" placeholder="filled in by Connect" spellcheck="false" aria-label="vLLM model name" style="flex:1"><datalist id="vmodels"></datalist><button id="connectBtn" type="button">Connect</button></span>
+      </div>
+    </div>
+  </details>
+
+  <details class="panel">
+    <summary>How bits are counted</summary>
+    <div class="prose">
+      <p>Each word's information is its surprisal under the model: <code>bits = −log₂ p(word | text before it)</code>. A predictable word like “of” costs a fraction of a bit; a surprising word can cost 10 or more. The human share credits each word to whoever decided it.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>How the word got in</th><th>Your bits</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Typed it yourself</td><td>Its full surprisal</td><td>You supplied everything the model could not predict.</td></tr>
+          <tr><td>Chose option <i>i</i> of the ones shown</td><td><code>−log₂(p_i ÷ Σ p_shown)</code></td><td>Picking the model's favourite is worth little; picking a long shot is worth a lot.</td></tr>
+          <tr><td>Typed a few letters, then picked or pressed Tab</td><td><code>−log₂ P(prefix)</code> + the choice bits</td><td>The letters narrowed the options; the pick finished the decision.</td></tr>
+          <tr><td>Accepted grey text with Tab</td><td>0</td><td>The model decided it. (A stricter count would credit a little for not rejecting it.)</td></tr>
+          <tr><td>Generated paragraph</td><td>0</td><td>The model wrote it without review.</td></tr>
+          <tr><td>Thinking Box notes</td><td>Their surprisal (steering bits)</td><td>Counts toward the human share: (your bits + steering) ÷ (all bits + steering).</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">The demo model is a small trigram model trained on a few paragraphs, so its numbers are only illustrative. Open the downloaded page to use the class Qwen server for real probabilities, and rescore the exported logs with <code>score_sessions.py</code> so every condition is measured by the same model.</p>
+  </details>
+
+  <details class="panel" id="logPanel">
+    <summary>Session log</summary>
+    <div class="btn-row">
+      <button id="copyLog" type="button">Copy log JSON</button>
+      <button id="dlLog" type="button" hidden>Download log</button>
+      <span class="toast" id="logToast" role="status"></span>
+    </div>
+    <pre class="log" id="logPre" tabindex="0"></pre>
+  </details>
+</div>
+
+<script>
+"use strict";
+/* ================= Demo corpus (original text) ================= */
+const CORPUS = `Eating fruit every day is one of the simplest ways to improve your health. Fruit is rich in vitamins, minerals, and fiber, and it is naturally low in fat and sodium. People who eat more fruit tend to have a lower risk of heart disease, stroke, and type 2 diabetes. Fruit also helps with digestion because the fiber keeps things moving and feeds the good bacteria in the gut.
+
+Not all fruit is the same. Berries are full of antioxidants, which protect cells from damage. Oranges and other citrus fruits are a good source of vitamin C, which supports the immune system. Bananas provide potassium, which helps control blood pressure. Apples are easy to carry and keep you full for a long time. Whole fruit is usually better than juice, because juice removes much of the fiber and adds a lot of sugar.
+
+The best way to eat more fruit is to make it easy. Keep a bowl of fruit on the kitchen table, add berries to your breakfast, and pack an apple or a banana for lunch. Frozen fruit is cheap, lasts a long time, and works well in smoothies. For college students, a banana or an apple between classes is an easy snack that keeps you full during long study sessions. Small changes like these add up over time and can make a real difference to your health.
+
+Writing is a way of thinking. When you write, you have to decide what you actually believe and how to explain it to someone else. This is why writing is hard, and it is also why writing is valuable. A good writer does not simply put words on a page. A good writer makes choices about what to say, what to leave out, and how to say it clearly.
+
+Many students now use AI tools to help them write. These tools can generate a paragraph in a few seconds, and the result often looks polished. But when the AI writes the paragraph, the ideas in it are the AI's ideas, not the student's. The student becomes an editor of someone else's first draft. Over time, this can make writing less personal and less thoughtful.
+
+There is another way to use AI in writing. Instead of generating whole paragraphs, the tool can suggest the next word or a short phrase. The writer can accept a suggestion, choose a different one, or ignore it and keep typing. In this way the AI helps with the easy parts of writing, while the writer stays in control of the important decisions. The model is in the room, but it is not holding the pen.
+
+To know whether a writing tool keeps the writer in control, we need a way to measure it. One idea is to count bits of information. Each word in a text carries some amount of information, depending on how surprising it is to the model. A predictable word carries only a few bits, and a surprising word carries many bits. If we know who chose each word, we can measure how many bits came from the writer and how many came from the model.
+
+This gives us a simple way to compare different tools. With plain typing, the writer provides all of the information, but writing is slow. With full generation, writing is fast, but the writer provides very little information. A good tool should let the writer work quickly while still making most of the important decisions. The goal is a writing tool, not a writing machine.
+
+Our study will ask students to write a short essay in three different ways. First, they will write with plain typing. Then they will write with a tool that generates whole paragraphs. Finally, they will write with our tool, which suggests words and asks the writer to choose at the important moments. We will measure how fast they write, how many bits of information they provide, and how much the final text feels like their own.`;
+
+const EXAMPLE_NOTES = "fruit for busy college students";
+const EXAMPLE_TEXT = "Eating fruit every day is one of the simplest ways to improve your health. For busy college students, a banana or an apple between classes is an easy snack that keeps you focused during long study sessions.";
+
+/* ================= Tokens ================= */
+const WORD_RE = /\n|[ \t]*[A-Za-z0-9][A-Za-z0-9'’-]*|[ \t]*[^\sA-Za-z0-9]/g;
+const tok = s => s.match(WORD_RE) || [];
+const normOf = u => {
+  if (u === "\n") return "¶";
+  const t = u.trim().toLowerCase().replace(/’/g, "'");
+  return t || "¶";
+};
+const PARA = "¶";
+const isWordNorm = n => /^[a-z0-9]/.test(n);
+const ENDERS = new Set([".", "!", "?", PARA]);
+const LOG2 = x => Math.log(x) / Math.LN2;
+const bitsOf = p => -LOG2(Math.max(p, 1e-12));
+const charShare = w => Math.pow(2, -2.5 * Math.max(1, w.length));
+
+function displayText(n, prev) {
+  if (n === PARA) return "\n";
+  if (!isWordNorm(n)) return n;
+  const cap = !prev || ENDERS.has(prev);
+  let w = n === "i" ? "I" : n;
+  if (cap) w = w[0].toUpperCase() + w.slice(1);
+  const sp = (!prev || prev === PARA) ? "" : " ";
+  return sp + w;
+}
+
+/* ================= Demo trigram model (Witten-Bell) ================= */
+const UNK = 0.01, BETA = 0.06, GAMMA = 0.3;
+function buildModel(text) {
+  const uni = new Map(), bi = new Map(), tri = new Map(); let N = 0;
+  const add = (m, h, w) => { let x = m.get(h); if (!x) { x = { c: 0, f: new Map() }; m.set(h, x); } x.c++; x.f.set(w, (x.f.get(w) || 0) + 1); };
+  for (const para of text.split(/\n\s*\n/)) {
+    const ns = [PARA, PARA, ...tok(para.trim()).map(normOf), PARA];
+    for (let i = 2; i < ns.length; i++) {
+      const w = ns[i]; uni.set(w, (uni.get(w) || 0) + 1); N++;
+      add(bi, ns[i - 1], w); add(tri, ns[i - 2] + "\u0001" + ns[i - 1], w);
+    }
+  }
+  return { uni, bi, tri, N, vocab: [...uni.keys()], cache: new Map() };
+}
+const MODEL = buildModel(CORPUS);
+
+function notesMap(notes) {
+  const m = new Map(); let total = 0;
+  for (const t of tok(notes || "")) { const n = normOf(t); if (!isWordNorm(n)) continue; m.set(n, (m.get(n) || 0) + 1); total++; }
+  return { m, total };
+}
+
+function demoDist(ctx, nm) {
+  const key = ctx[0] + "\u0001" + ctx[1];
+  const hit = MODEL.cache.get(key); if (hit) return hit;
+  const T3 = MODEL.tri.get(key), T2 = MODEL.bi.get(ctx[1]);
+  const wb = (node, cnt, lower) => node ? (cnt + GAMMA * node.f.size * lower) / (node.c + GAMMA * node.f.size) : lower;
+  const beta = nm && nm.total ? BETA : 0;
+  const cand = new Set(MODEL.vocab); if (nm) for (const w of nm.m.keys()) cand.add(w);
+  let pu = wb(T3, 0, wb(T2, 0, UNK));
+  const items = [];
+  for (const w of cand) {
+    const c1 = MODEL.uni.get(w) || 0;
+    let p;
+    if (c1) {
+      const p1 = (1 - UNK) * c1 / MODEL.N;
+      p = wb(T3, T3 ? (T3.f.get(w) || 0) : 0, wb(T2, T2 ? (T2.f.get(w) || 0) : 0, p1));
+    } else p = pu * charShare(w);
+    p = (1 - beta) * p + (beta ? beta * (nm.m.get(w) || 0) / nm.total : 0);
+    items.push({ n: w, p });
+  }
+  pu *= (1 - beta);
+  items.sort((a, b) => b.p - a.p);
+  let H = pu > 0 ? -pu * LOG2(pu) : 0;
+  for (const o of items) if (o.p > 0) H -= o.p * LOG2(o.p);
+  const index = new Map(items.map(o => [o.n, o]));
+  const d = { items, unk: pu, H, index };
+  MODEL.cache.set(key, d);
+  return d;
+}
+const demoProb = (d, n) => { const o = d.index.get(n); return o ? o.p : d.unk * charShare(n); };
+
+/* ================= State ================= */
+const S = {
+  units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [],
+  startT: null, lastT: null, startedAt: new Date().toISOString(),
+  mode: "assist", notes: "", noteBits: 0, nm: null,
+  sugg: null, hidden: false, reqId: 0, err: null, example: false,
+  settings: { thr: 2.5, ghostMax: 6, k: 4, pickKeys: "alt", showSrc: true, backend: "demo", url: "https://vllm.thoughtful-ai.com", model: "" },
+};
+const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+const isDemo = () => S.settings.backend === "demo";
+const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+const logEv = (e, extra) => S.events.push(Object.assign({ t: Math.round(now()), e }, extra || {}));
+
+function markKey() {
+  S.keystrokes++; S.pendingKeys++;
+  const t = now(); if (S.startT === null) S.startT = t; S.lastT = t;
+}
+const docText = (units = S.units) => units.map(u => u.text).join("");
+const lastNorm = () => S.units.length ? S.units[S.units.length - 1].n : null;
+const ctxNorms = (units = S.units) => {
+  const L = units.length;
+  return [L > 1 ? units[L - 2].n : PARA, L > 0 ? units[L - 1].n : PARA];
+};
+
+/* ================= vLLM backend ================= */
+const promptHeader = () => S.notes.trim() ? `Notes for this draft: ${S.notes.trim()}\n\nDraft:\n` : "";
+const promptText = (units = S.units) => promptHeader() + docText(units);
+async function vcall(body) {
+  const t0 = now();
+  const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/completions", {
+    method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(Object.assign({ model: S.settings.model }, body)),
+  });
+  if (!res.ok) throw new Error(`vLLM answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  return { j: await res.json(), ms: now() - t0 };
+}
+function positionsFrom(lp) {
+  return lp.tokens.map((tk, i) => {
+    const top = (lp.top_logprobs && lp.top_logprobs[i]) || {};
+    const items = Object.entries(top).map(([text, l]) => ({ text, n: text, p: Math.exp(l) })).sort((a, b) => b.p - a.p);
+    const mass = items.reduce((s, o) => s + o.p, 0), rest = Math.max(0, 1 - mass);
+    let H = rest > 1e-9 ? -rest * LOG2(rest) : 0;
+    for (const o of items) if (o.p > 0) H -= o.p * LOG2(o.p);
+    return { tok: tk, p: Math.exp(lp.token_logprobs[i]), items, H, rest };
+  }).filter(x => x.tok !== "");
+}
+function suggFromPositions(pos, ms) {
+  if (!pos || !pos.length) return null;
+  const thr = S.settings.thr, first = pos[0];
+  const ghost = [];
+  if (first.H < thr) for (let i = 0; i < pos.length; i++) { if (i > 0 && pos[i].H >= thr) break; ghost.push({ text: pos[i].tok, n: pos[i].tok, p: pos[i].p }); }
+  return { items: first.items, unk: first.rest, H: first.H, ghost, pos, ms };
+}
+const VLLM = {
+  async suggest() {
+    const { j, ms } = await vcall({ prompt: promptText(), max_tokens: S.settings.ghostMax, temperature: 0, logprobs: 20 });
+    return suggFromPositions(positionsFrom(j.choices[0].logprobs), ms);
+  },
+  async score(prefix, span) {
+    const { j } = await vcall({ prompt: prefix + span, max_tokens: 1, temperature: 0, logprobs: 1, echo: true });
+    const lp = j.choices[0].logprobs; let bits = 0;
+    for (let i = 0; i < lp.tokens.length; i++) {
+      const off = lp.text_offset[i];
+      if (off >= prefix.length && off < prefix.length + span.length && lp.token_logprobs[i] != null) bits += -lp.token_logprobs[i] / Math.LN2;
+    }
+    return bits;
+  },
+  async generate() {
+    const { j } = await vcall({ prompt: promptText(), max_tokens: 80, temperature: 0.8, logprobs: 1 });
+    return positionsFrom(j.choices[0].logprobs).map(x => ({ text: x.tok, n: x.tok, p: x.p }));
+  },
+  async connect() {
+    const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/models", { credentials: "omit" });
+    if (!res.ok) throw new Error(`vLLM answered ${res.status}`);
+    const j = await res.json();
+    const ids = (j.data || []).map(m => m.id);
+    $("vmodels").innerHTML = ids.map(id => `<option value="${esc(id)}"></option>`).join("");
+    return ids.find(id => /3\.8/.test(id)) || ids[0] || "";
+  },
+};
+
+/* ================= Demo backend ================= */
+function demoGreedy(ctx, prev, steps) {
+  let c = [ctx[0], ctx[1]], pv = prev, out = [];
+  for (let i = 0; i < steps; i++) {
+    const d = demoDist(c, S.nm); const top = d.items[0];
+    if (!top || top.n === PARA) break;
+    out.push(displayText(top.n, pv)); c = [c[1], top.n]; pv = top.n;
+  }
+  return out.join("");
+}
+const DEMO = {
+  suggest() {
+    const t0 = now();
+    const ctx = ctxNorms(), prev = lastNorm(), thr = S.settings.thr;
+    const d = demoDist(ctx, S.nm);
+    const items = d.items.filter(o => o.n !== PARA).map(o => ({ n: o.n, p: o.p, text: displayText(o.n, prev) }));
+    const ghost = [];
+    if (d.H < thr) {
+      let c = ctx.slice(), pv = prev;
+      for (let i = 0; i < S.settings.ghostMax; i++) {
+        const dd = i === 0 ? d : demoDist(c, S.nm);
+        if (i > 0 && dd.H >= thr) break;
+        const top = dd.items[0]; if (!top || top.n === PARA) break;
+        ghost.push({ n: top.n, p: top.p, text: displayText(top.n, pv) });
+        c = [c[1], top.n]; pv = top.n;
+      }
+    }
+    return { items, unk: d.unk, H: d.H, ghost, ms: now() - t0 };
+  },
+  preview(n) { return demoGreedy([ctxNorms()[1], n], n, 2); },
+  scoreUnit(units, n) { return bitsOf(demoProb(demoDist(ctxNorms(units), S.nm), n)); },
+  generate() {
+    const out = []; let c = ctxNorms(), pv = lastNorm(), words = 0;
+    while (words < 45) {
+      const d = demoDist(c, S.nm);
+      const pool = d.items.slice(0, 40);
+      const w = pool.map(o => Math.pow(o.p, 1 / 0.85)); const z = w.reduce((a, b) => a + b, 0);
+      let r = Math.random() * z, pick = pool[0];
+      for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) { pick = pool[i]; break; } }
+      if (pick.n === PARA) { if (words > 12) break; else continue; }
+      out.push({ text: displayText(pick.n, pv), n: pick.n, p: pick.p });
+      if (isWordNorm(pick.n)) words++;
+      c = [c[1], pick.n]; pv = pick.n;
+      if (words > 30 && ENDERS.has(pick.n)) break;
+    }
+    return out;
+  },
+  noteBits(notes) {
+    let c = [PARA, PARA], b = 0;
+    for (const t of tok(notes)) { const n = normOf(t); b += bitsOf(demoProb(demoDist(c, null), n)); c = [c[1], n]; }
+    return b;
+  },
+};
+
+/* ================= Suggestion view ================= */
+function prefixState() {
+  const pre = S.buffer.trim();
+  return { has: pre.length > 0, pre: pre.toLowerCase() };
+}
+function matcher() {
+  const { pre } = prefixState();
+  if (isDemo()) return o => o.n.startsWith(pre);
+  const b = S.buffer.toLowerCase();
+  return o => o.text.toLowerCase().startsWith(b);
+}
+function view() {
+  const s = S.sugg;
+  if (!s || S.mode !== "assist" || S.hidden) return { kind: "none", opts: [], ghost: [] };
+  const K = S.settings.k, ps = prefixState(), m = matcher();
+  const filtering = isDemo() ? ps.has : S.buffer.length > 0;
+  const pool = filtering ? s.items.filter(m) : s.items;
+  const opts = pool.slice(0, K);
+  let prefixMass = 1;
+  if (ps.has) prefixMass = Math.min(1, pool.reduce((a, o) => a + o.p, 0));
+  let ghost = s.ghost || [];
+  if (ghost.length && filtering && !m(ghost[0])) ghost = [];
+  const fork = !ps.has && s.H >= S.settings.thr;
+  return { kind: fork ? "fork" : ps.has ? "filter" : "ghost", opts, ghost, prefixMass, H: s.H, ms: s.ms };
+}
+
+/* ================= Edits ================= */
+function pushUnit(u) {
+  u.t = Math.round(now());
+  if (u.n === undefined) u.n = normOf(u.text);
+  S.units.push(u);
+}
+function commitTyped(text) {
+  const units = S.units.slice();
+  const u = { text, src: "typed", keys: S.pendingKeys, bits: null, hbits: null };
+  S.pendingKeys = 0;
+  pushUnit(u);
+  if (isDemo()) { u.bits = u.hbits = DEMO.scoreUnit(units, u.n); }
+  else {
+    VLLM.score(promptText(units), text).then(b => { u.bits = u.hbits = b; render(); }).catch(e => { S.err = e.message; render(); });
+  }
+  logEv("type", { text });
+}
+function typeChar(c) {
+  if (c === "\r") return;
+  if (c === "\n") { if (S.buffer.trim()) commitTyped(S.buffer); S.buffer = ""; commitTyped("\n"); return; }
+  if (/\s/.test(c)) {
+    if (S.buffer.trim()) commitTyped(S.buffer);
+    S.buffer = (S.units.length && lastNorm() !== PARA) ? " " : "";
+    return;
+  }
+  if (/[.,;:!?"()“”]/.test(c)) {
+    if (S.buffer.trim()) commitTyped(S.buffer);
+    S.buffer = ""; commitTyped(c); return;
+  }
+  S.buffer += c;
+}
+function afterChange(structural) {
+  S.hidden = false;
+  if (structural) refresh(); else render();
+}
+function pick(i) {
+  const v = view(); const o = v.opts[i]; if (!o) return false;
+  const shown = v.opts.reduce((a, x) => a + x.p, 0);
+  const ps = prefixState();
+  const pBits = ps.has ? bitsOf(Math.max(v.prefixMass, o.p)) : 0;
+  const prev = lastNorm();
+  const text = isDemo() ? displayText(o.n, prev) : o.text;
+  pushUnit({
+    text, n: isDemo() ? o.n : undefined, src: "chose", keys: S.pendingKeys, bits: bitsOf(o.p),
+    hbits: pBits + bitsOf(o.p / shown), H: v.H, choice: i, prefix: ps.has ? S.buffer.trim() : "",
+    opts: v.opts.map(x => ({ text: x.text, p: +x.p.toFixed(6) })),
+  });
+  S.pendingKeys = 0; S.buffer = "";
+  logEv("pick", { i, text });
+  afterChange(true);
+  return true;
+}
+function acceptGhost(count) {
+  const v = view(); const g = v.ghost; if (!g.length) return false;
+  const n = Math.min(count, g.length), ps = prefixState();
+  for (let i = 0; i < n; i++) {
+    const o = g[i];
+    const text = isDemo() ? displayText(o.n, lastNorm()) : o.text;
+    pushUnit({
+      text, n: isDemo() ? o.n : undefined, src: "accepted", keys: i === 0 ? S.pendingKeys : 0, bits: bitsOf(o.p),
+      hbits: i === 0 && ps.has ? bitsOf(Math.max(v.prefixMass, o.p)) : 0, prefix: i === 0 && ps.has ? S.buffer.trim() : "",
+    });
+    if (i === 0) { S.pendingKeys = 0; S.buffer = ""; }
+  }
+  logEv("accept", { n });
+  if (!isDemo() && S.sugg && S.sugg.pos) S.sugg = suggFromPositions(S.sugg.pos.slice(n), S.sugg.ms);
+  afterChange(true);
+  return true;
+}
+function backspace() {
+  if (S.buffer.length) { S.buffer = S.buffer.slice(0, -1); return false; }
+  const u = S.units.pop(); if (!u) return false;
+  logEv("delete", { text: u.text, src: u.src });
+  if (u.text.trim().length > 1) S.buffer = u.text.slice(0, -1);
+  else if (u.text.trim().length === 1 && /[A-Za-z0-9]/.test(u.text.trim())) S.buffer = u.text.slice(0, -1);
+  return true;
+}
+
+/* ================= Async refresh ================= */
+let refreshTimer = null;
+function refresh() {
+  render();
+  if (S.mode !== "assist") { S.sugg = null; render(); return; }
+  const id = ++S.reqId;
+  if (isDemo()) { S.sugg = DEMO.suggest(); S.err = null; render(); return; }
+  const run = () => {
+    VLLM.suggest().then(r => { if (id === S.reqId) { S.sugg = r; S.err = null; render(); } })
+     .catch(e => { if (id === S.reqId) { S.err = friendlyErr(e); S.sugg = null; render(); } });
+  };
+  if (!promptText()) { S.sugg = null; render(); return; }
+  clearTimeout(refreshTimer); refreshTimer = setTimeout(run, 40);
+}
+function friendlyErr(e) {
+  const m = String(e && e.message || e);
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return `Can't reach the model server at ${S.settings.url}. Check the address and your internet connection. If it's your own vLLM server, start it with --allowed-origins '["*"]'.`;
+  return m;
+}
+function updateNotes() {
+  S.nm = notesMap(S.notes); MODEL.cache.clear();
+  if (!S.notes.trim()) S.noteBits = 0;
+  else if (isDemo()) S.noteBits = DEMO.noteBits(S.notes);
+  else VLLM.score("", S.notes.trim()).then(b => { S.noteBits = b; render(); }).catch(() => {});
+}
+
+/* ================= Stats ================= */
+function stats() {
+  let total = 0, human = 0, pending = 0;
+  const by = { typed: 0, chose: 0, accepted: 0, generated: 0 };
+  let choices = 0;
+  for (const u of S.units) {
+    if (u.bits == null) { pending++; continue; }
+    total += u.bits; human += u.hbits;
+    by[u.src] += u.hbits;
+    if (u.src === "chose") choices++;
+  }
+  const words = (docText().match(/[A-Za-z0-9][A-Za-z0-9'’-]*/g) || []).length;
+  const secs = S.startT !== null && S.lastT !== null ? (S.lastT - S.startT) / 1000 : 0;
+  const nb = S.noteBits || 0;
+  const control = total + nb > 0 ? (human + nb) / (total + nb) : 0;
+  return {
+    total, human, noteBits: nb, control, by, choices, words, secs, pending,
+    keystrokes: S.keystrokes, perKey: S.keystrokes ? human / S.keystrokes : 0,
+    wpm: secs > 2 ? words / (secs / 60) : 0,
+  };
+}
+
+/* ================= Rendering ================= */
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = (x, d = 1) => Number.isFinite(x) ? x.toFixed(d) : "–";
+
+function ghostText(v) {
+  if (!v.ghost.length) return "";
+  const g = v.ghost; let first;
+  if (isDemo()) {
+    const pre = S.buffer.trim();
+    if (pre) first = g[0].n.slice(pre.length);
+    else first = S.buffer === " " ? g[0].text.replace(/^ /, "") : g[0].text;
+  } else first = g[0].text.slice(S.buffer.length);
+  return first + g.slice(1).map(x => x.text).join("");
+}
+function renderDoc(v) {
+  const parts = S.units.map((u, i) => `<span class="u ${u.src}" data-i="${i}">${esc(u.text)}</span>`);
+  if (!S.units.length && !S.buffer) parts.push(`<span class="placeholder">${S.mode === "generate" ? "Write a prompt in the Thinking Box, then generate. " : "Click here and start typing. "}</span>`);
+  parts.push(`<span class="buf">${esc(S.buffer)}</span><span class="caret"></span><span class="ghost">${esc(ghostText(v))}</span>`);
+  $("doc").innerHTML = parts.join("");
+  $("app").classList.toggle("show-src", S.settings.showSrc);
+}
+function renderStatus(v) {
+  const bits = [];
+  if (S.err) bits.push(`<span class="pill err">${esc(S.err)}</span>`);
+  if (S.mode === "assist" && S.sugg && !S.hidden) {
+    if (v.kind === "fork") bits.push(`<span class="pill fork">Your call: ${fmt(v.H)} bits of uncertainty</span>`);
+    else if (v.kind === "ghost") bits.push(`<span class="pill">Model is confident: ${fmt(v.H)} bits</span>`);
+    else bits.push(`<span class="pill">Filtering by “${esc(S.buffer.trim())}”</span>`);
+    bits.push(`<span>Choices appear at ≥ <span class="mono">${fmt(S.settings.thr)}</span> bits</span>`);
+  } else if (S.mode === "assist" && S.hidden) bits.push(`<span>Suggestions hidden until the next word</span>`);
+  else if (S.mode === "plain") bits.push(`<span>Plain typing: no suggestions. Every word is still scored.</span>`);
+  bits.push(`<span>${isDemo() ? "Demo model" : esc(S.settings.model || "vLLM")}${S.sugg && S.sugg.ms != null ? ` · <span class="mono">${Math.round(S.sugg.ms)} ms</span>` : ""}</span>`);
+  $("status").innerHTML = bits.join("");
+}
+function pickLabel(i) { return S.settings.pickKeys === "alt" ? `Alt+${i + 1}` : `${i + 1}`; }
+function renderSlots(v) {
+  const el = $("slots");
+  const show = S.mode === "assist";
+  el.hidden = !show; $("keys").hidden = !show;
+  $("genRow").hidden = S.mode !== "generate";
+  if (!show) return;
+  el.className = "slots " + (v.kind === "fork" ? "fork" : v.kind === "ghost" ? "quiet" : "");
+  const K = S.settings.k, shown = v.opts.reduce((a, o) => a + o.p, 0) || 1, html = [];
+  for (let i = 0; i < 4; i++) {
+    const o = v.opts[i];
+    if (!o || i >= K) { html.push(`<button class="slot empty" type="button" tabindex="-1" aria-hidden="true"><span class="k">&nbsp;</span><span class="w">&nbsp;</span></button>`); continue; }
+    const pv = isDemo() ? DEMO.preview(o.n) : "";
+    const share = o.p / shown;
+    const word = (isDemo() ? displayText(o.n, lastNorm()) : o.text).replace(/^\s+/, "").replace(/\n/g, "↵");
+    html.push(`<button class="slot" type="button" data-pick="${i}" title="p = ${o.p.toExponential(2)} · ${fmt(bitsOf(o.p))} bits from the model">
+      <span class="k"><span>${pickLabel(i)}</span><span>${Math.round(share * 100)}%</span></span>
+      <span class="w">${esc(word)}<span class="pv">${esc(pv)}</span></span>
+      <span class="pb"><i style="width:${Math.max(3, share * 100).toFixed(1)}%"></i></span>
+    </button>`);
+  }
+  el.innerHTML = html.join("");
+  $("pickKeyLabel").innerHTML = S.settings.pickKeys === "alt" ? "<kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>4</kbd>" : "<kbd>1</kbd>–<kbd>4</kbd> at a fork";
+}
+function renderStats() {
+  const st = stats();
+  $("controlPct").textContent = st.total + st.noteBits > 0 ? Math.round(st.control * 100) + "%" : "–";
+  const T = st.total + st.noteBits || 1;
+  const model = Math.max(0, st.total - st.human);
+  $("stack").innerHTML = [
+    ["var(--typed)", st.by.typed], ["var(--chose)", st.by.chose], ["var(--steer)", st.noteBits], ["var(--ai)", model],
+  ].map(([c, x]) => `<span style="width:${(100 * x / T).toFixed(2)}%;background:${c}"></span>`).join("");
+  $("kv").innerHTML = `
+    <dt>All bits in the text</dt><dd>${fmt(st.total)}</dd>
+    <dt>Your bits</dt><dd>${fmt(st.human)}</dd>
+    <dt>Steering bits (Thinking Box)</dt><dd>${fmt(st.noteBits)}</dd>
+    <dt>Human share without steering</dt><dd>${st.total ? Math.round(100 * st.human / st.total) + "%" : "–"}</dd>
+    <div class="sep"></div>
+    <dt>Keystrokes</dt><dd>${st.keystrokes}</dd>
+    <dt>Your bits per keystroke</dt><dd>${fmt(st.perKey, 2)}</dd>
+    <dt>Choices made</dt><dd>${st.choices}</dd>
+    <dt>Words</dt><dd>${st.words}</dd>
+    <dt>Words per minute</dt><dd>${st.wpm ? fmt(st.wpm, 0) : "–"}</dd>
+    ${st.pending ? `<dt>Words still being scored</dt><dd>${st.pending}</dd>` : ""}`;
+}
+const STRIP_MAX = 20, STRIP_H = 96;
+function renderStrip() {
+  const el = $("strip");
+  const cols = S.units.filter(u => u.text.trim() || u.text === "\n").map(u => {
+    const label = u.text === "\n" ? "¶" : u.text.trim();
+    if (u.bits == null) return `<div class="col ${u.src}" title="“${esc(label)}” · scoring…"><div class="bar pending" style="height:8px"></div><div class="lbl">${esc(label)}</div></div>`;
+    const h = Math.min(u.bits, STRIP_MAX) / STRIP_MAX * STRIP_H;
+    const hh = Math.min(u.hbits, u.bits, STRIP_MAX) / STRIP_MAX * STRIP_H;
+    const srcName = { typed: "typed", chose: "chosen from options", accepted: "accepted grey text", generated: "generated" }[u.src];
+    const tip = `“${label}” · ${srcName} · ${fmt(u.bits)} bits from the model · ${fmt(u.hbits)} your bits${u.opts ? " · options: " + u.opts.map(o => o.text.trim()).join(", ") : ""}`;
+    return `<div class="col ${u.src}" title="${esc(tip)}"><div class="bar${u.bits > STRIP_MAX ? " over" : ""}" style="height:${h.toFixed(1)}px"><div class="hum" style="height:${hh.toFixed(1)}px"></div></div><div class="lbl">${esc(label)}</div></div>`;
+  });
+  el.innerHTML = cols.length ? cols.join("") : `<div class="strip-empty">Bars appear here as you write. Taller bars carry more information.</div>`;
+  el.scrollLeft = el.scrollWidth;
+}
+function sessionLog() {
+  const st = stats();
+  return {
+    app: "thoughtful-writing-bit-meter", version: 1, example: S.example,
+    condition: S.mode, backend: S.settings.backend, model: isDemo() ? "demo-trigram" : S.settings.model, url: isDemo() ? null : S.settings.url,
+    settings: { thr: S.settings.thr, ghostMax: S.settings.ghostMax, k: S.settings.k, pickKeys: S.settings.pickKeys },
+    startedAt: S.startedAt, exportedAt: new Date().toISOString(),
+    notes: S.notes, promptHeader: promptHeader(), noteBits: +st.noteBits.toFixed(3),
+    summary: {
+      totalBits: +st.total.toFixed(3), humanBits: +st.human.toFixed(3), control: +st.control.toFixed(4), controlNoSteering: st.total ? +(st.human / st.total).toFixed(4) : 0,
+      keystrokes: st.keystrokes, humanBitsPerKeystroke: +st.perKey.toFixed(4), words: st.words,
+      seconds: +st.secs.toFixed(1), wpm: +st.wpm.toFixed(1), choices: st.choices,
+    },
+    text: docText(),
+    units: S.units.map(u => Object.assign({ text: u.text, src: u.src, bits: u.bits == null ? null : +u.bits.toFixed(4), hbits: u.hbits == null ? null : +u.hbits.toFixed(4), keys: u.keys, t: u.t },
+      u.opts ? { opts: u.opts, choice: u.choice, H: +u.H.toFixed(3) } : {}, u.prefix ? { prefix: u.prefix } : {})),
+    events: S.events,
+  };
+}
+function renderLog() { if ($("logPanel").open) $("logPre").textContent = JSON.stringify(sessionLog(), null, 2); }
+
+function render() {
+  const v = view();
+  renderDoc(v); renderStatus(v); renderSlots(v); renderStats(); renderStrip(); renderLog();
+  $("exampleNote").hidden = !S.example;
+}
+
+/* ================= Input handling ================= */
+let composing = false;
+function onKeyDown(e) {
+  if (composing) return;
+  const v = view();
+  if (e.key === "Tab") {
+    e.preventDefault(); markKey();
+    if (S.mode !== "assist") { S.pendingKeys--; S.keystrokes--; return; }
+    if (e.shiftKey) { if (!acceptGhost(99)) flash(); return; }
+    if (acceptGhost(1)) return;
+    if (v.kind === "filter" && v.opts.length) { pick(0); return; }
+    S.keystrokes--; S.pendingKeys--; flash();
+    return;
+  }
+  if (e.key === "Escape") { S.hidden = true; render(); return; }
+  if (e.key === "Backspace") {
+    e.preventDefault(); markKey();
+    const structural = backspace(); afterChange(structural); return;
+  }
+  if (e.key === "Enter") { e.preventDefault(); markKey(); typeChar("\n"); afterChange(true); return; }
+  const digit = /^Digit([1-4])$/.exec(e.code);
+  if (digit && S.mode === "assist") {
+    const i = +digit[1] - 1;
+    const altMode = S.settings.pickKeys === "alt";
+    const ok = altMode ? e.altKey : (!e.altKey && !e.ctrlKey && !e.metaKey && v.kind === "fork");
+    if (ok) { e.preventDefault(); markKey(); if (!pick(i)) { S.keystrokes--; S.pendingKeys--; } return; }
+  }
+}
+function flash() {
+  const el = $("slots"); el.animate && el.animate([{ transform: "translateX(-3px)" }, { transform: "translateX(3px)" }, { transform: "none" }], { duration: 160 });
+}
+function onInput() {
+  if (composing) return;
+  const cap = $("cap"), val = cap.value; cap.value = "";
+  if (!val) return;
+  let structural = false;
+  for (const ch of val) {
+    markKey();
+    const before = S.units.length;
+    typeChar(ch);
+    if (S.units.length !== before) structural = true;
+  }
+  if (S.example) S.example = false;
+  afterChange(structural);
+}
+
+/* ================= Session control ================= */
+function resetSession() {
+  Object.assign(S, { units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [], startT: null, lastT: null, startedAt: new Date().toISOString(), sugg: null, hidden: false, err: null, example: false });
+  logEv("start", { condition: S.mode });
+  refresh();
+}
+function simulateExample() {
+  S.notes = EXAMPLE_NOTES; $("notes").value = S.notes; updateNotes();
+  Object.assign(S, { units: [], buffer: "", keystrokes: 0, pendingKeys: 0, events: [] });
+  let clock = 0;
+  const step = ms => { clock += ms; };
+  for (const raw of tok(EXAMPLE_TEXT)) {
+    const n = normOf(raw);
+    S.sugg = DEMO.suggest();
+    const v = view();
+    let done = false;
+    if (isWordNorm(n)) {
+      if (v.ghost.length && v.ghost[0].n === n) { S.keystrokes++; S.pendingKeys++; step(450); done = acceptGhost(1); }
+      else {
+        const i = v.opts.findIndex(o => o.n === n);
+        if (i >= 0 && v.kind === "fork") { S.keystrokes++; S.pendingKeys++; step(1400); done = pick(i); }
+      }
+    }
+    if (!done) {
+      const word = raw.replace(/^[ \t]+/, "");
+      const space = /^[ \t]/.test(raw) ? 1 : 0;
+      S.keystrokes += word.length + space; S.pendingKeys += word.length + space; step(220 * (word.length + space));
+      commitTyped(S.units.length && /^[ \t]/.test(raw) ? " " + word : word);
+    }
+    S.units[S.units.length - 1].t = clock;
+  }
+  S.startT = 0; S.lastT = clock; S.example = true; S.buffer = " ";
+  S.events = [{ t: 0, e: "example" }];
+  refresh();
+}
+
+/* ================= Wire up ================= */
+function bind() {
+  const cap = $("cap");
+  $("sheet").addEventListener("mousedown", e => { if (!e.target.closest("button")) { e.preventDefault(); cap.focus(); } });
+  cap.addEventListener("keydown", onKeyDown);
+  cap.addEventListener("input", onInput);
+  cap.addEventListener("compositionstart", () => { composing = true; });
+  cap.addEventListener("compositionend", () => { composing = false; onInput(); });
+  $("slots").addEventListener("mousedown", e => e.preventDefault());
+  $("slots").addEventListener("click", e => {
+    const b = e.target.closest("[data-pick]"); if (!b) return;
+    markKey(); pick(+b.dataset.pick); cap.focus();
+  });
+  $("notes").addEventListener("input", () => {
+    S.notes = $("notes").value; clearTimeout(bind.nt);
+    bind.nt = setTimeout(() => { updateNotes(); logEv("notes", { length: S.notes.length }); refresh(); }, isDemo() ? 150 : 500);
+  });
+  $("mode").addEventListener("change", () => { S.mode = $("mode").value; logEv("mode", { condition: S.mode }); S.example ? resetSession() : refresh(); });
+  $("startBtn").addEventListener("click", () => { $("notes").value = ""; S.notes = ""; updateNotes(); resetSession(); cap.focus(); });
+  const nb = $("newBtn");
+  nb.addEventListener("click", () => {
+    if (!S.units.length || nb.dataset.armed === "1") { nb.dataset.armed = ""; nb.textContent = "New session"; resetSession(); cap.focus(); return; }
+    nb.dataset.armed = "1"; nb.textContent = "Clear the text?";
+    setTimeout(() => { nb.dataset.armed = ""; nb.textContent = "New session"; }, 3000);
+  });
+  $("genBtn").addEventListener("click", async () => {
+    const btn = $("genBtn"); btn.disabled = true; markKey();
+    try {
+      const out = isDemo() ? DEMO.generate() : await VLLM.generate();
+      out.forEach((o, i) => pushUnit({ text: o.text, n: isDemo() ? o.n : undefined, src: "generated", bits: bitsOf(o.p), hbits: 0, keys: i === 0 ? S.pendingKeys : 0 }));
+      S.pendingKeys = 0; S.err = null; logEv("generate", { units: out.length });
+    } catch (e) { S.err = friendlyErr(e); }
+    btn.disabled = false; S.example = false; render();
+  });
+  const setS = (k, v) => { S.settings[k] = v; logEv("setting", { k, v }); };
+  $("thr").addEventListener("input", () => { setS("thr", +$("thr").value); $("thrOut").textContent = fmt(S.settings.thr) + " bits"; if (!isDemo() && S.sugg && S.sugg.pos) S.sugg = suggFromPositions(S.sugg.pos, S.sugg.ms); refresh(); });
+  $("ghostMax").addEventListener("input", () => { setS("ghostMax", +$("ghostMax").value); $("ghostOut").textContent = S.settings.ghostMax + (S.settings.ghostMax === 1 ? " word" : " words"); refresh(); });
+  $("kOpt").addEventListener("change", () => { setS("k", +$("kOpt").value); render(); });
+  $("pickKeys").addEventListener("change", () => { setS("pickKeys", $("pickKeys").value); render(); });
+  $("showSrc").addEventListener("change", () => { S.settings.showSrc = $("showSrc").checked; render(); });
+  $("backend").addEventListener("change", () => { setS("backend", $("backend").value); MODEL.cache.clear(); updateNotes(); refresh(); });
+  $("vurl").addEventListener("change", () => setS("url", $("vurl").value.trim()));
+  $("vmodel").addEventListener("change", () => setS("model", $("vmodel").value.trim()));
+  $("connectBtn").addEventListener("click", () => connectServer(false));
+  $("logPanel").addEventListener("toggle", renderLog);
+  $("copyLog").addEventListener("click", () => {
+    const txt = JSON.stringify(sessionLog(), null, 2); $("logPre").textContent = txt;
+    const done = () => { $("logToast").textContent = "Copied"; setTimeout(() => $("logToast").textContent = "", 1800); };
+    const fallback = () => { const r = document.createRange(); r.selectNodeContents($("logPre")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("logToast").textContent = "Selected. Press Ctrl+C to copy."; };
+    try { navigator.clipboard.writeText(txt).then(done, fallback); } catch (e) { fallback(); }
+  });
+  if (!IN_FRAME) {
+    $("dlLog").hidden = false;
+    $("dlLog").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(sessionLog(), null, 2)], { type: "application/json" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+      a.download = `session-${S.mode}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`; a.click();
+    });
+    $("backendHint").textContent = "Connects to the class server on load. Connect lists the server's models and picks Qwen 3.8.";
+  } else {
+    $("backend").querySelector('option[value="vllm"]').disabled = true;
+    ["vurl", "vmodel", "connectBtn"].forEach(id => $(id).disabled = true);
+    $("backendHint").textContent = "This preview can only run the demo model. Download bit_meter.html and open it in your browser to use the class server.";
+  }
+}
+async function connectServer(quiet) {
+  S.settings.url = $("vurl").value.trim();
+  try {
+    const id = await VLLM.connect(); S.settings.model = id; $("vmodel").value = id;
+    $("backend").value = "vllm"; S.settings.backend = "vllm"; S.err = null; MODEL.cache.clear();
+    logEv("connect", { url: S.settings.url, model: id });
+    if (S.example) { $("notes").value = ""; S.notes = ""; resetSession(); }
+    updateNotes(); refresh();
+  } catch (e) {
+    if (quiet) { $("backendHint").textContent = `Couldn't reach ${S.settings.url}, so the demo model is running. Open Settings and press Connect to try again.`; }
+    else { S.err = friendlyErr(e); render(); }
+  }
+}
+bind();
+simulateExample();
+if (!IN_FRAME) connectServer(true);
+</script>
