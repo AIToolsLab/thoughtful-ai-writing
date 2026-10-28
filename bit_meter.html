@@ -1034,7 +1034,17 @@ async function sendChat() {
   box.value = ""; renderChat();
   const btn = $("chatForm").querySelector("button"); btn.disabled = true;
   try {
-    const { text: reply, backend } = await VLLM.chat(S.chat);
+    const draft = docText().trim();
+    const notes = S.notes.trim();
+    const contextParts = [];
+    if (notes) contextParts.push(`Thinking Box notes:\n${notes}`);
+    if (draft) contextParts.push(`Current draft:\n${draft}`);
+    const system = "You are a thoughtful writing assistant. The writer is composing a text and has shared their current notes and draft below. "
+      + "Read them carefully, then help the writer: ask clarifying questions, point out gaps or unclear parts, and suggest directions. "
+      + "Keep your help focused and useful for the writing task.\n\n"
+      + (contextParts.length ? contextParts.join("\n\n") : "(The writer hasn't written anything yet.)");
+    const messages = [{ role: "system", content: system }, ...S.chat];
+    const { text: reply, backend } = await VLLM.chat(messages);
     S.chat.push({ role: "assistant", content: reply });
     logEv("chat", { user: text, reply, backend });
   } catch (e) {
