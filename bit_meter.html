@@ -974,8 +974,9 @@ function onInput() {
 
 /* ================= Session control ================= */
 function resetSession() {
-  Object.assign(S, { units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [], startT: null, lastT: null, startedAt: new Date().toISOString(), sugg: null, hidden: false, err: null, example: false });
+  Object.assign(S, { units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [], startT: null, lastT: null, startedAt: new Date().toISOString(), sugg: null, hidden: false, err: null, example: false, chat: [] });
   logEv("start", { condition: S.mode });
+  renderChat();
   refresh();
 }
 function simulateExample() {
