@@ -565,7 +565,7 @@ const VLLM = {
         const res = await fetch(cfg.url.replace(/\/+$/, "") + "/api/chat/completions", {
           method: "POST", credentials: "omit",
           headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.apiKey },
-          body: JSON.stringify({ model: cfg.model, messages, max_tokens: 200, temperature: 0.7, stream: false }),
+          body: JSON.stringify({ model: cfg.model, messages, max_tokens: 800, temperature: 0.7, stream: false }),
         });
         if (!res.ok) throw new Error(`DeepSeek answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
         const text = await res.text();
@@ -590,7 +590,7 @@ const VLLM = {
     }
     const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/chat/completions", {
       method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: S.settings.model, messages, max_tokens: 200, temperature: 0.7 }),
+      body: JSON.stringify({ model: S.settings.model, messages, max_tokens: 800, temperature: 0.7 }),
     });
     if (!res.ok) throw new Error(`vLLM answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
     const j = await res.json();
