@@ -372,6 +372,7 @@ pre.log {
   </details>
 </div>
 
+<script src="config.js"></script>
 <script>
 "use strict";
 /* ================= Demo corpus (original text) ================= */
@@ -558,13 +559,42 @@ const VLLM = {
   },
   async chat(messages) {
     const t0 = now();
+    const cfg = (typeof window !== "undefined" && window.DEEPSEEK_CONFIG) || null;
+    if (cfg && cfg.apiKey && cfg.apiKey !== "PASTE_YOUR_API_KEY_HERE") {
+      try {
+        const res = await fetch(cfg.url.replace(/\/+$/, "") + "/api/chat/completions", {
+          method: "POST", credentials: "omit",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.apiKey },
+          body: JSON.stringify({ model: cfg.model, messages, max_tokens: 800, temperature: 0.7, stream: false }),
+        });
+        if (!res.ok) throw new Error(`DeepSeek answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
+        const text = await res.text();
+        // The Open WebUI endpoint returns an SSE stream even with stream:false.
+        // Parse the "data:" lines and collect the final content deltas.
+        let reply = "";
+        for (const line of text.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (!payload || payload === "[DONE]") continue;
+          try {
+            const obj = JSON.parse(payload);
+            const delta = (obj.choices && obj.choices[0] && obj.choices[0].delta) || {};
+            if (delta.content) reply += delta.content;
+          } catch (e) { /* skip malformed lines */ }
+        }
+        if (!reply) throw new Error("DeepSeek returned an empty reply");
+        return { text: reply, ms: now() - t0, backend: "deepseek" };
+      } catch (e) {
+        // Fall back to the class vLLM server below.
+      }
+    }
     const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/chat/completions", {
       method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: S.settings.model, messages, max_tokens: 200, temperature: 0.7 }),
+      body: JSON.stringify({ model: S.settings.model, messages, max_tokens: 800, temperature: 0.7 }),
     });
     if (!res.ok) throw new Error(`vLLM answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
     const j = await res.json();
-    return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "", ms: now() - t0 };
+    return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "", ms: now() - t0, backend: "vllm" };
   },
 };
 
@@ -944,8 +974,9 @@ function onInput() {
 
 /* ================= Session control ================= */
 function resetSession() {
-  Object.assign(S, { units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [], startT: null, lastT: null, startedAt: new Date().toISOString(), sugg: null, hidden: false, err: null, example: false });
+  Object.assign(S, { units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [], startT: null, lastT: null, startedAt: new Date().toISOString(), sugg: null, hidden: false, err: null, example: false, chat: [] });
   logEv("start", { condition: S.mode });
+  renderChat();
   refresh();
 }
 function simulateExample() {
@@ -996,16 +1027,26 @@ async function sendChat() {
   if (!text) return;
   if (isDemo()) {
     S.chat.push({ role: "user", content: text });
-    S.chat.push({ role: "assistant", content: "The demo model can't chat. Switch to the vLLM backend (Settings → Connect) to talk to the model." });
+    S.chat.push({ role: "assistant", content: "The demo model can't chat. Switch to the vLLM backend (Settings → Connect) or configure config.js to talk to the model." });
     box.value = ""; renderChat(); return;
   }
   S.chat.push({ role: "user", content: text });
   box.value = ""; renderChat();
   const btn = $("chatForm").querySelector("button"); btn.disabled = true;
   try {
-    const { text: reply } = await VLLM.chat(S.chat);
+    const draft = docText().trim();
+    const notes = S.notes.trim();
+    const contextParts = [];
+    if (notes) contextParts.push(`Thinking Box notes:\n${notes}`);
+    if (draft) contextParts.push(`Current draft:\n${draft}`);
+    const system = "You are a thoughtful writing assistant. The writer is composing a text and has shared their current notes and draft below. "
+      + "Read them carefully, then help the writer: ask clarifying questions, point out gaps or unclear parts, and suggest directions. "
+      + "Keep your help focused and useful for the writing task.\n\n"
+      + (contextParts.length ? contextParts.join("\n\n") : "(The writer hasn't written anything yet.)");
+    const messages = [{ role: "system", content: system }, ...S.chat];
+    const { text: reply, backend } = await VLLM.chat(messages);
     S.chat.push({ role: "assistant", content: reply });
-    logEv("chat", { user: text, reply });
+    logEv("chat", { user: text, reply, backend });
   } catch (e) {
     S.chat.push({ role: "assistant", content: "Error: " + friendlyErr(e) });
   }
