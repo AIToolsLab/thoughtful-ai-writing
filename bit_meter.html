@@ -372,6 +372,7 @@ pre.log {
   </details>
 </div>
 
+<script src="config.js"></script>
 <script>
 "use strict";
 /* ================= Demo corpus (original text) ================= */
@@ -558,13 +559,28 @@ const VLLM = {
   },
   async chat(messages) {
     const t0 = now();
+    const cfg = (typeof window !== "undefined" && window.DEEPSEEK_CONFIG) || null;
+    if (cfg && cfg.apiKey && cfg.apiKey !== "PASTE_YOUR_API_KEY_HERE") {
+      try {
+        const res = await fetch(cfg.url.replace(/\/+$/, "") + "/chat/completions", {
+          method: "POST", credentials: "omit",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.apiKey },
+          body: JSON.stringify({ model: cfg.model, messages, max_tokens: 200, temperature: 0.7 }),
+        });
+        if (!res.ok) throw new Error(`DeepSeek answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
+        const j = await res.json();
+        return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "", ms: now() - t0, backend: "deepseek" };
+      } catch (e) {
+        // Fall back to the class vLLM server below.
+      }
+    }
     const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/chat/completions", {
       method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model: S.settings.model, messages, max_tokens: 200, temperature: 0.7 }),
     });
     if (!res.ok) throw new Error(`vLLM answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
     const j = await res.json();
-    return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "", ms: now() - t0 };
+    return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "", ms: now() - t0, backend: "vllm" };
   },
 };
 
@@ -996,16 +1012,16 @@ async function sendChat() {
   if (!text) return;
   if (isDemo()) {
     S.chat.push({ role: "user", content: text });
-    S.chat.push({ role: "assistant", content: "The demo model can't chat. Switch to the vLLM backend (Settings → Connect) to talk to the model." });
+    S.chat.push({ role: "assistant", content: "The demo model can't chat. Switch to the vLLM backend (Settings → Connect) or configure config.js to talk to the model." });
     box.value = ""; renderChat(); return;
   }
   S.chat.push({ role: "user", content: text });
   box.value = ""; renderChat();
   const btn = $("chatForm").querySelector("button"); btn.disabled = true;
   try {
-    const { text: reply } = await VLLM.chat(S.chat);
+    const { text: reply, backend } = await VLLM.chat(S.chat);
     S.chat.push({ role: "assistant", content: reply });
-    logEv("chat", { user: text, reply });
+    logEv("chat", { user: text, reply, backend });
   } catch (e) {
     S.chat.push({ role: "assistant", content: "Error: " + friendlyErr(e) });
   }
