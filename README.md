@@ -28,6 +28,18 @@ A human-centered AI writing tool that helps users compose text through interacti
 
 Open `bit_meter.html` in a browser. For the demo model, no setup is required — just start writing. To use the vLLM backend, enter the server URL and model, then click **Connect**.
 
+### Chat & configuration
+
+The **Chat** panel (collapsible, VS Code-style) lets you talk to the model, and the conversation steers the writing suggestions. Chat prefers the school's locally-deployed **DeepSeek** API and falls back to the class vLLM server if it's unavailable.
+
+To use the DeepSeek chat backend, create your local config from the template:
+
+```bash
+cp config.example.js config.js
+```
+
+Then open `config.js` and paste your API key into `apiKey`. **`config.js` is gitignored and never committed** — it holds your private key. The committed `config.example.js` is just a template for others to copy.
+
 ### Project status
 
 Early prototype. The Bit Meter is a working demo; the broader thoughtful-ai-writing tool is under active development.
