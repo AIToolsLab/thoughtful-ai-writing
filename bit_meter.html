@@ -69,6 +69,7 @@ select, input[type="text"], input[type="url"] {
 
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
 @media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1100px) { .grid.chat-open { grid-template-columns: minmax(0, 1fr) 320px; } .grid.chat-open .chat { grid-column: 1 / -1; order: -1; } }
 
 .writer { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .sheet {
@@ -128,6 +129,21 @@ kbd {
 }
 
 .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* Chat sidebar (collapsible, VS Code style) */
+.grid.chat-open { grid-template-columns: 300px minmax(0, 1fr) 320px; }
+.chat { display: none; flex-direction: column; gap: 10px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); padding: 12px 14px; }
+.grid.chat-open .chat { display: flex; }
+.chat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chat-head h2 { margin: 0; }
+.chat-toggle { padding: 2px 8px; line-height: 1; }
+.chat-log { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 420px; min-height: 120px; }
+.chat-msg { border-radius: 8px; padding: 8px 10px; font-size: 0.9rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-msg.user { background: color-mix(in srgb, var(--typed) 12%, var(--sheet)); align-self: flex-end; }
+.chat-msg.assistant { background: var(--soft); align-self: flex-start; }
+.chat-input { display: flex; flex-direction: column; gap: 8px; }
+.chat-input textarea { width: 100%; min-height: 60px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--soft); font-family: var(--serif); font-size: 0.95rem; line-height: 1.5; }
+.chat-input button { align-self: flex-end; }
 .panel { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .panel textarea {
   width: 100%; min-height: 110px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
@@ -210,6 +226,7 @@ pre.log {
         </select>
       </label>
       <button id="newBtn" type="button">New session</button>
+      <button id="chatToggle" type="button" aria-expanded="false">Chat</button>
     </div>
   </header>
 
@@ -218,7 +235,18 @@ pre.log {
     <button class="primary" id="startBtn" type="button">Start writing</button>
   </div>
 
-  <main class="grid">
+  <main class="grid" id="grid">
+    <aside class="chat" aria-label="Chat">
+      <div class="chat-head">
+        <h2>Chat</h2>
+        <button class="chat-toggle" id="chatClose" type="button" aria-label="Close chat">×</button>
+      </div>
+      <div class="chat-log" id="chatLog" aria-live="polite"></div>
+      <form class="chat-input" id="chatForm">
+        <textarea id="chatBox" placeholder="Ask the model… (conversation steers suggestions)" aria-label="Chat message"></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </aside>
     <section class="writer" aria-label="Writing area">
       <div class="sheet" id="sheet">
         <div class="doc" id="doc" aria-live="off"></div>
@@ -450,6 +478,7 @@ const S = {
   units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [],
   startT: null, lastT: null, startedAt: new Date().toISOString(),
   mode: "assist", notes: "", noteBits: 0, nm: null,
+  chat: [], chatOpen: false,
   sugg: null, hidden: false, reqId: 0, err: null, example: false,
   settings: { thr: 2.5, ghostMax: 6, k: 4, pickKeys: "alt", showSrc: true, backend: "demo", url: "https://vllm.thoughtful-ai.com", model: "" },
 };
@@ -470,7 +499,10 @@ const ctxNorms = (units = S.units) => {
 };
 
 /* ================= vLLM backend ================= */
-const promptHeader = () => S.notes.trim() ? `Notes for this draft: ${S.notes.trim()}\n\nDraft:\n` : "";
+const chatContext = () => S.chat.length
+  ? "\n\nConversation with the writer:\n" + S.chat.map(m => `${m.role === "user" ? "Writer" : "Assistant"}: ${m.content}`).join("\n") + "\n"
+  : "";
+const promptHeader = () => (S.notes.trim() ? `Notes for this draft: ${S.notes.trim()}\n\nDraft:\n` : "") + chatContext();
 const promptText = (units = S.units) => promptHeader() + docText(units);
 async function vcall(body) {
   const t0 = now();
@@ -523,6 +555,16 @@ const VLLM = {
     const ids = (j.data || []).map(m => m.id);
     $("vmodels").innerHTML = ids.map(id => `<option value="${esc(id)}"></option>`).join("");
     return ids.find(id => /3\.8/.test(id)) || ids[0] || "";
+  },
+  async chat(messages) {
+    const t0 = now();
+    const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/chat/completions", {
+      method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: S.settings.model, messages, max_tokens: 200, temperature: 0.7 }),
+    });
+    if (!res.ok) throw new Error(`vLLM answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
+    const j = await res.json();
+    return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "", ms: now() - t0 };
   },
 };
 
@@ -936,6 +978,40 @@ function simulateExample() {
   refresh();
 }
 
+/* ================= Chat ================= */
+function setChatOpen(open) {
+  S.chatOpen = open;
+  $("grid").classList.toggle("chat-open", open);
+  $("chatToggle").setAttribute("aria-expanded", String(open));
+  if (open) $("chatBox").focus();
+}
+function renderChat() {
+  const log = $("chatLog");
+  log.innerHTML = S.chat.map(m => `<div class="chat-msg ${m.role}">${esc(m.content)}</div>`).join("");
+  log.scrollTop = log.scrollHeight;
+}
+async function sendChat() {
+  const box = $("chatBox");
+  const text = box.value.trim();
+  if (!text) return;
+  if (isDemo()) {
+    S.chat.push({ role: "user", content: text });
+    S.chat.push({ role: "assistant", content: "The demo model can't chat. Switch to the vLLM backend (Settings → Connect) to talk to the model." });
+    box.value = ""; renderChat(); return;
+  }
+  S.chat.push({ role: "user", content: text });
+  box.value = ""; renderChat();
+  const btn = $("chatForm").querySelector("button"); btn.disabled = true;
+  try {
+    const { text: reply } = await VLLM.chat(S.chat);
+    S.chat.push({ role: "assistant", content: reply });
+    logEv("chat", { user: text, reply });
+  } catch (e) {
+    S.chat.push({ role: "assistant", content: "Error: " + friendlyErr(e) });
+  }
+  btn.disabled = false; renderChat(); refresh();
+}
+
 /* ================= Wire up ================= */
 function bind() {
   const cap = $("cap");
@@ -949,6 +1025,10 @@ function bind() {
     const b = e.target.closest("[data-pick]"); if (!b) return;
     markKey(); pick(+b.dataset.pick); cap.focus();
   });
+  $("chatToggle").addEventListener("click", () => setChatOpen(!S.chatOpen));
+  $("chatClose").addEventListener("click", () => setChatOpen(false));
+  $("chatForm").addEventListener("submit", e => { e.preventDefault(); sendChat(); });
+  $("chatBox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
   $("notes").addEventListener("input", () => {
     S.notes = $("notes").value; clearTimeout(bind.nt);
     bind.nt = setTimeout(() => { updateNotes(); logEv("notes", { length: S.notes.length }); refresh(); }, isDemo() ? 150 : 500);
