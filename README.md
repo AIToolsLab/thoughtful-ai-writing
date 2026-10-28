@@ -53,15 +53,25 @@ Open `config.js` and replace `PASTE_YOUR_API_KEY_HERE` with your real key:
 
 ```js
 window.DEEPSEEK_CONFIG = {
-  url: "https://localai.calvin.edu/v1",
+  url: "http://localhost:3000",   // local CORS proxy (see below)
   model: "deepseek-ai/DeepSeek-V4-Flash-0731",
   apiKey: "YOUR_REAL_KEY_HERE",   // ← paste your key here
 };
 ```
 
-**Step 3 — Open the app**
+**Step 3 — Start the CORS proxy**
 
-Open `bit_meter.html` in a browser. The Chat panel will now use DeepSeek first, and fall back to the class vLLM server if DeepSeek is unreachable.
+The school's DeepSeek server (Open WebUI) doesn't send CORS headers, so browsers block cross-origin requests. A tiny local proxy forwards requests and adds the needed headers. Start it in a terminal (keep it running):
+
+```bash
+node deepseek-proxy.js
+```
+
+You should see: `DeepSeek CORS proxy running at http://localhost:3000`
+
+**Step 4 — Open the app**
+
+Open `bit_meter.html` in a browser. The Chat panel will now use DeepSeek (through the proxy) first, and fall back to the class vLLM server if DeepSeek is unreachable.
 
 > **Why two files?** `config.example.js` is committed as a template so anyone can clone the repo and copy it. `config.js` holds your private key and is ignored by git (see `.gitignore`), so your key is never uploaded to GitHub.
 

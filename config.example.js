@@ -7,9 +7,9 @@
 // Then edit config.js and paste your API key.
 // ============================================================
 window.DEEPSEEK_CONFIG = {
-  // Base URL of the school's locally-deployed DeepSeek API (Open WebUI).
-  // The chat endpoint /api/chat/completions is appended automatically.
-  url: "https://localai.calvin.edu",
+  // Local CORS proxy (start with: node deepseek-proxy.js).
+  // The proxy forwards to the school's DeepSeek server and adds CORS headers.
+  url: "http://localhost:3000",
   // Model id served by the local endpoint.
   model: "deepseek-ai/DeepSeek-V4-Flash-0731",
   // Your API key. Keep this private — it is only read from this local file.
