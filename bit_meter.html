@@ -509,10 +509,15 @@ const ctxNorms = (units = S.units) => {
 
 /* ================= vLLM backend ================= */
 const chatContext = () => S.chat.length
-  ? "\n\nConversation with the writer:\n" + S.chat.map(m => `${m.role === "user" ? "Writer" : "Assistant"}: ${m.content}`).join("\n") + "\n"
+  ? "\n\n<conversation>\n" + S.chat.map(m => `<${m.role === "user" ? "writer" : "assistant"}>\n${m.content}\n</${m.role === "user" ? "writer" : "assistant"}>`).join("\n") + "\n</conversation>\n"
   : "";
-const promptHeader = () => chatContext() + (S.notes.trim() ? `Notes for this draft: ${S.notes.trim()}\n\nDraft:\n` : "");
-const promptText = (units = S.units) => promptHeader() + docText(units);
+const promptHeader = () => {
+  const parts = [];
+  if (S.notes.trim()) parts.push(`<notes>\n${S.notes.trim()}\n</notes>`);
+  parts.push(`<draft>\n`);
+  return chatContext() + parts.join("\n\n");
+};
+const promptText = (units = S.units) => promptHeader() + docText(units) + "\n</draft>";
 async function vcall(body) {
   const t0 = now();
   const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/completions", {
