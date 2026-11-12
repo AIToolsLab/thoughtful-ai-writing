@@ -141,6 +141,14 @@ kbd {
 .chat-msg { border-radius: 8px; padding: 8px 10px; font-size: 0.9rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-msg.user { background: color-mix(in srgb, var(--typed) 12%, var(--sheet)); align-self: flex-end; }
 .chat-msg.assistant { background: var(--soft); align-self: flex-start; }
+.chat-msg.thinking { display: flex; align-items: center; gap: 8px; color: var(--muted); font-style: italic; }
+.chat-msg.thinking .dots { display: inline-flex; gap: 3px; }
+.chat-msg.thinking .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: think 1.2s infinite ease-in-out; }
+.chat-msg.thinking .dots i:nth-child(2) { animation-delay: 0.2s; }
+.chat-msg.thinking .dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes think { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.chat-msg.error { background: color-mix(in srgb, var(--danger, #e5484d) 12%, var(--sheet)); align-self: flex-start; }
+.chat-msg .retry { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; }
 .chat-input { display: flex; flex-direction: column; gap: 8px; }
 .chat-input textarea { width: 100%; min-height: 60px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--soft); font-family: var(--serif); font-size: 0.95rem; line-height: 1.5; }
 .chat-input button { align-self: flex-end; }
@@ -503,7 +511,7 @@ const ctxNorms = (units = S.units) => {
 const chatContext = () => S.chat.length
   ? "\n\nConversation with the writer:\n" + S.chat.map(m => `${m.role === "user" ? "Writer" : "Assistant"}: ${m.content}`).join("\n") + "\n"
   : "";
-const promptHeader = () => (S.notes.trim() ? `Notes for this draft: ${S.notes.trim()}\n\nDraft:\n` : "") + chatContext();
+const promptHeader = () => chatContext() + (S.notes.trim() ? `Notes for this draft: ${S.notes.trim()}\n\nDraft:\n` : "");
 const promptText = (units = S.units) => promptHeader() + docText(units);
 async function vcall(body) {
   const t0 = now();
@@ -747,6 +755,33 @@ function acceptGhost(count) {
   afterChange(true);
   return true;
 }
+function deleteSelection() {
+  const sel = getSelection();
+  if (!sel || sel.isCollapsed) return false;
+  const doc = $("doc");
+  if (!doc.contains(sel.anchorNode) || !doc.contains(sel.focusNode)) return false;
+  // 收集被选中的 unit 索引（含部分覆盖的 unit）
+  const idx = new Set();
+  const range = sel.getRangeAt(0);
+  const walk = node => {
+    if (node.nodeType === 1 && node.classList && node.classList.contains("u")) {
+      const i = +node.dataset.i;
+      if (Number.isFinite(i)) idx.add(i);
+      return;
+    }
+    for (const c of node.childNodes) walk(c);
+  };
+  walk(range.commonAncestorContainer);
+  if (!idx.size) return false;
+  const sorted = [...idx].sort((a, b) => b - a);
+  for (const i of sorted) {
+    const u = S.units[i];
+    if (u) logEv("delete", { text: u.text, src: u.src });
+  }
+  S.units = S.units.filter((_, i) => !idx.has(i));
+  sel.removeAllRanges();
+  return true;
+}
 function backspace() {
   if (S.buffer.length) { S.buffer = S.buffer.slice(0, -1); return false; }
   const u = S.units.pop(); if (!u) return false;
@@ -941,9 +976,9 @@ function onKeyDown(e) {
     return;
   }
   if (e.key === "Escape") { S.hidden = true; render(); return; }
-  if (e.key === "Backspace") {
+  if (e.key === "Backspace" || e.key === "Delete") {
     e.preventDefault(); markKey();
-    const structural = backspace(); afterChange(structural); return;
+    const structural = deleteSelection() || backspace(); afterChange(structural); return;
   }
   if (e.key === "Enter") { e.preventDefault(); markKey(); typeChar("\n"); afterChange(true); return; }
   const digit = /^Digit([1-4])$/.exec(e.code);
@@ -1018,7 +1053,15 @@ function setChatOpen(open) {
 }
 function renderChat() {
   const log = $("chatLog");
-  log.innerHTML = S.chat.map(m => `<div class="chat-msg ${m.role}">${esc(m.content)}</div>`).join("");
+  log.innerHTML = S.chat.map(m => {
+    if (m.thinking) {
+      return `<div class="chat-msg assistant thinking"><span>Thinking</span><span class="dots"><i></i><i></i><i></i></span></div>`;
+    }
+    if (m.error) {
+      return `<div class="chat-msg error">${esc(m.content)}<br><button class="retry" type="button" data-retry="${esc(m.retryText || "")}">↻ Retry</button></div>`;
+    }
+    return `<div class="chat-msg ${m.role}">${esc(m.content)}</div>`;
+  }).join("");
   log.scrollTop = log.scrollHeight;
 }
 async function sendChat() {
@@ -1033,6 +1076,10 @@ async function sendChat() {
   S.chat.push({ role: "user", content: text });
   box.value = ""; renderChat();
   const btn = $("chatForm").querySelector("button"); btn.disabled = true;
+  // 显示“正在思考”指示器
+  const thinkingIdx = S.chat.length;
+  S.chat.push({ role: "assistant", content: "", thinking: true });
+  renderChat();
   try {
     const draft = docText().trim();
     const notes = S.notes.trim();
@@ -1043,22 +1090,43 @@ async function sendChat() {
       + "Read them carefully, then help the writer: ask clarifying questions, point out gaps or unclear parts, and suggest directions. "
       + "Keep your help focused and useful for the writing task.\n\n"
       + (contextParts.length ? contextParts.join("\n\n") : "(The writer hasn't written anything yet.)");
-    const messages = [{ role: "system", content: system }, ...S.chat];
+    const messages = [{ role: "system", content: system }, ...S.chat.filter(m => !m.thinking)];
     const { text: reply, backend } = await VLLM.chat(messages);
-    S.chat.push({ role: "assistant", content: reply });
+    S.chat[thinkingIdx] = { role: "assistant", content: reply };
     logEv("chat", { user: text, reply, backend });
   } catch (e) {
-    S.chat.push({ role: "assistant", content: "Error: " + friendlyErr(e) });
+    // 连接失败：保留错误消息并提供重试按钮
+    S.chat[thinkingIdx] = { role: "assistant", content: "Error: " + friendlyErr(e), error: true, retryText: text };
   }
   btn.disabled = false; renderChat(); refresh();
+}
+function retryChat(text) {
+  const box = $("chatBox");
+  box.value = text;
+  sendChat();
 }
 
 /* ================= Wire up ================= */
 function bind() {
   const cap = $("cap");
-  $("sheet").addEventListener("mousedown", e => { if (!e.target.closest("button")) { e.preventDefault(); cap.focus(); } });
+  $("sheet").addEventListener("mousedown", e => {
+    if (e.target.closest("button")) return;
+    cap.focus();
+    // 允许在 doc 上框选文本；点击空白处则阻止默认（避免放置文本光标）
+    if (!e.target.closest(".doc")) e.preventDefault();
+  });
   cap.addEventListener("keydown", onKeyDown);
   cap.addEventListener("input", onInput);
+  // 框选 draft 文字时焦点不在 cap 上，需在文档级处理删除
+  document.addEventListener("keydown", e => {
+    if ((e.key === "Backspace" || e.key === "Delete") && !e.target.closest("textarea, input, select")) {
+      const sel = getSelection();
+      if (sel && !sel.isCollapsed && $("doc").contains(sel.anchorNode) && $("doc").contains(sel.focusNode)) {
+        e.preventDefault(); markKey();
+        const structural = deleteSelection(); afterChange(structural);
+      }
+    }
+  });
   cap.addEventListener("compositionstart", () => { composing = true; });
   cap.addEventListener("compositionend", () => { composing = false; onInput(); });
   $("slots").addEventListener("mousedown", e => e.preventDefault());
@@ -1070,6 +1138,10 @@ function bind() {
   $("chatClose").addEventListener("click", () => setChatOpen(false));
   $("chatForm").addEventListener("submit", e => { e.preventDefault(); sendChat(); });
   $("chatBox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+  $("chatLog").addEventListener("click", e => {
+    const b = e.target.closest("[data-retry]"); if (!b) return;
+    retryChat(b.dataset.retry);
+  });
   $("notes").addEventListener("input", () => {
     S.notes = $("notes").value; clearTimeout(bind.nt);
     bind.nt = setTimeout(() => { updateNotes(); logEv("notes", { length: S.notes.length }); refresh(); }, isDemo() ? 150 : 500);
