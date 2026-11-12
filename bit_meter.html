@@ -765,7 +765,7 @@ function deleteSelection() {
   if (!sel || sel.isCollapsed) return false;
   const doc = $("doc");
   if (!doc.contains(sel.anchorNode) || !doc.contains(sel.focusNode)) return false;
-  // 收集被选中的 unit 索引（含部分覆盖的 unit）
+  // Collect the indices of selected units (including partially covered units)
   const idx = new Set();
   const range = sel.getRangeAt(0);
   const walk = node => {
@@ -1081,7 +1081,7 @@ async function sendChat() {
   S.chat.push({ role: "user", content: text });
   box.value = ""; renderChat();
   const btn = $("chatForm").querySelector("button"); btn.disabled = true;
-  // 显示“正在思考”指示器
+  // Show the "thinking" indicator
   const thinkingIdx = S.chat.length;
   S.chat.push({ role: "assistant", content: "", thinking: true });
   renderChat();
@@ -1100,7 +1100,7 @@ async function sendChat() {
     S.chat[thinkingIdx] = { role: "assistant", content: reply };
     logEv("chat", { user: text, reply, backend });
   } catch (e) {
-    // 连接失败：保留错误消息并提供重试按钮
+    // Connection failed: keep the error message and offer a retry button
     S.chat[thinkingIdx] = { role: "assistant", content: "Error: " + friendlyErr(e), error: true, retryText: text };
   }
   btn.disabled = false; renderChat(); refresh();
@@ -1117,12 +1117,12 @@ function bind() {
   $("sheet").addEventListener("mousedown", e => {
     if (e.target.closest("button")) return;
     cap.focus();
-    // 允许在 doc 上框选文本；点击空白处则阻止默认（避免放置文本光标）
+    // Allow selecting text on the doc; clicking blank space prevents default (avoids placing a text caret)
     if (!e.target.closest(".doc")) e.preventDefault();
   });
   cap.addEventListener("keydown", onKeyDown);
   cap.addEventListener("input", onInput);
-  // 框选 draft 文字时焦点不在 cap 上，需在文档级处理删除
+  // When selecting draft text the focus is not on cap, so handle deletion at the document level
   document.addEventListener("keydown", e => {
     if ((e.key === "Backspace" || e.key === "Delete") && !e.target.closest("textarea, input, select")) {
       const sel = getSelection();
