@@ -670,10 +670,13 @@ async function vllmNoteBits(notes, signal) {
   return sumBits(await scoreSpan(p.text + REQUEST_HEAD, notes, signal));
 }
 // Chat replies — Simon. Uses DeepSeek through Open WebUI when config.js provides a key,
-// otherwise the class vLLM server's chat endpoint (thinking off, like the predictions).
+// otherwise Qwen on the class server. The class server has no /v1/chat/completions route,
+// so the Qwen reply is generated like the predictions: the chat template (thinking off)
+// renders the messages, then /v1/completions writes the assistant turn.
 async function chatReply(messages) {
   const t0 = now();
   const cfg = (typeof window !== "undefined" && window.DEEPSEEK_CONFIG) || null;
+  let deepseekErr = "";
   if (cfg && cfg.apiKey && cfg.apiKey !== "PASTE_YOUR_API_KEY_HERE") {
     try {
       const res = await fetch(cfg.url.replace(/\/+$/, "") + "/api/chat/completions", {
@@ -697,10 +700,17 @@ async function chatReply(messages) {
       }
       if (!reply) throw new Error("DeepSeek returned an empty reply");
       return { text: reply, ms: now() - t0, backend: "deepseek" };
-    } catch (e) { /* fall back to the class vLLM server */ }
+    } catch (e) { deepseekErr = friendlyErr(e); /* fall back to Qwen on the class server */ }
   }
-  const j = await post("/v1/chat/completions", { model: S.settings.model, messages, max_tokens: 800, temperature: 0.7, chat_template_kwargs: CHAT_TEMPLATE_KWARGS });
-  return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "", ms: now() - t0, backend: "vllm" };
+  try {
+    const prefix = await chatPrefix(messages);
+    const j = await completions({ prompt: prefix.text, max_tokens: 800, temperature: 0.7 });
+    const text = ((j.choices && j.choices[0] && j.choices[0].text) || "").replace(/<\|im_end\|>[\s\S]*$/, "").trim();
+    if (!text) throw new Error("Qwen returned an empty reply");
+    return { text, ms: now() - t0, backend: "qwen" };
+  } catch (e) {
+    throw new Error((deepseekErr ? `DeepSeek failed (${deepseekErr}), then ` : "") + `Qwen failed: ${friendlyErr(e)}`);
+  }
 }
 async function vllmConnect() {
   const res = await fetch(baseUrl() + "/v1/models", { credentials: "omit" });
