@@ -2,7 +2,7 @@
 """How much should a writer put in the Thinking Box?
 
 Scores one finished text under several versions of the notes, from none to very
-detailed, using the class vLLM server. For each version it reports:
+detailed, using the writing engine (see qwen_chat.py). For each version it reports:
 
   note_bits   information in the plan itself, scored where the page puts it:
               inside the request "Help me write a short piece. Here is what I want to say: ..."
