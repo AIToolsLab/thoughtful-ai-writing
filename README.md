@@ -8,25 +8,71 @@ A human-centered AI writing tool that helps users compose text through interacti
 
 ### How it works
 
-- Every word you type is measured in **bits** — the amount of information you supplied.
-- Words you choose yourself count as **your** bits; words suggested and accepted from the AI count as **AI** bits.
-- A **meter** shows your "human share" of all bits, and a **bits-per-word strip** reads like the text itself, color-coding each word by its source.
+- Every piece of text is measured in **bits**: how surprising it is to the language model, which is the amount of information it carries.
+- Words you type count as **your** bits. Choosing an option counts the information in your choice. Grey text you accept and generated text count as **AI** bits.
+- A **meter** shows your human share, a **bits-per-word strip** shows each word's bits, and **Bits by part** splits everything the model read between you and the AI (see below).
+
+### Two models
+
+| Job | Model | Server |
+|---|---|---|
+| Writing suggestions, bit scores, the meter | Qwen 3.8 | Prof. Arnold's vLLM server, `https://vllm.thoughtful-ai.com` |
+| Chat replies | DeepSeek (falls back to Qwen) | Calvin's Open WebUI, through the local proxy |
+
+Predictions use the token engine from Prof. Arnold's [writing-prototypes](https://github.com/AIToolsLab/writing-prototypes) (`docs/llm.js`, `docs/engine-tokens.js`): chat-format prompts with thinking off, token healing for half-typed words, and whole-word options with probabilities.
 
 ### Features
 
-- **Three writing modes**: Assisted (ghost text + choices), Plain typing, and Generate paragraphs.
-- **Thinking Box**: notes that steer the AI's suggestions.
-- **Live meter** showing your human share of all bits, plus a per-word bit strip.
-- **Interactive suggestions**: `Tab` accepts the next word, `Shift`+`Tab` accepts the grey phrase, `Alt`+`1`–`4` (or `1`–`4` at a fork) chooses an option, typing letters filters suggestions, and `Esc` hides them.
-- **Two backends**:
-  - **Built-in demo model** — a trigram model that runs entirely in the page (no server needed).
-  - **Class vLLM server (Qwen)** — connect to a remote vLLM endpoint for real model suggestions.
-- **Adjustable settings**: bit threshold, ghost-word length, number of choice options, and pick-key style.
-- **Session logging**: copy or download the full session log as JSON.
+- **Three writing modes:** Assisted (grey text + choices), Plain typing, and Generate paragraphs.
+- **Your plan** (formerly the Thinking Box): what you want to say. The model reads it as your request in a chat; you write the reply and the model only predicts.
+- **Suggestions:** `Tab` accepts the next grey word, `Shift`+`Tab` the whole grey phrase, `Alt`+`1`–`5` (`⌥` on Mac) picks an option, keep typing to narrow the options, `Esc` hides them. When the model is unsure (a "fork"), the grey text disappears and you choose.
+- **Chat panel:** ask about your draft; the conversation steers the suggestions and is part of the bit split.
+- **Measure what the plan saved:** scores the text with and without the plan.
+- **Select and delete:** drag over words in the draft, then press Backspace or Delete.
+- **Settings:** fork threshold, grey-text length, number of options, words per option, pick keys.
+- **Session log:** copy or download every session as JSON for `score_sessions.py`.
 
 ### Usage
 
-Open `bit_meter.html` in a browser. For the demo model, no setup is required — just start writing. To use the vLLM backend, enter the server URL and model, then click **Connect**.
+Open `bit_meter.html` in a browser. It connects to the class Qwen server on load; the model name and response time appear under the writing box. If the server can't be reached, a banner says so and **Try again** reconnects. There is no offline model. For chat through DeepSeek, also follow the setup below.
+
+### How the bits are split (writer vs. AI)
+
+The model reads one long prompt, in this order:
+
+1. the chat turns: the writer's messages and the AI's replies,
+2. the request with the writer's plan,
+3. the draft.
+
+`bit_meter.html` scores this whole prompt in one pass and adds up each token's bits by the part it falls in (each token belongs to its first non-space character):
+
+| Part | Was (old tags) | Counted as |
+|---|---|---|
+| Your chat messages | `<writer>` | you |
+| Your plan | `<notes>` | you |
+| The draft, word by word | `<draft>` | you or AI, by how each word got in |
+| AI chat replies | `<assistant>` | AI |
+| Template markup and the fixed request wording | — | not counted |
+
+Each part is scored *given everything before it*. So if an AI reply suggests an idea and you then write it, that idea is counted once, as AI bits in the reply, and your draft gets cheaper. If you bring the idea yourself, it shows up as your bits.
+
+The meter shows **Human share of plan + text** (the original measure), **Human share including the chat**, and a **Bits by part** table. Each chat bubble shows its own bits. The parts always add up to the score of the whole prompt.
+
+Known issue: Qwen scores DeepSeek's replies, so a reply worded unlike Qwen counts as many AI bits even if none of it was used. Measuring only what the replies changed in the draft would fix this; it is a next step.
+
+### Analysis scripts
+
+| File | What it does |
+|---|---|
+| `score_sessions.py` | Rescores session logs with the same split and draws the speed-vs-control chart. `sessions.csv` includes `chat_writer_bits`, `chat_assistant_bits`, `control_with_chat`. |
+| `notes_sweep.py` | Scores one finished text under several versions of the plan. |
+| `qwen_chat.py` | Shared helper used by both scripts: the same chat format, scoring and split as the page. |
+| `examples/` | A sample paragraph and plan versions for `notes_sweep.py`. |
+
+```bash
+python score_sessions.py logs/*.json
+python notes_sweep.py examples/essay.txt examples/notes_versions.txt
+```
 
 ### Chat & configuration
 
@@ -77,4 +123,4 @@ Open `bit_meter.html` in a browser. The Chat panel will now use DeepSeek (throug
 
 ### Project status
 
-Early prototype. The Bit Meter is a working demo; the broader thoughtful-ai-writing tool is under active development.
+Working prototype for the senior project (final presentation December 2026). Predictions, scoring and the bit split run on the class Qwen server; the chat runs on DeepSeek when the proxy is set up.
