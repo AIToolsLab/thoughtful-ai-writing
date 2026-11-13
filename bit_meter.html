@@ -1,3 +1,10 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
 <title>Thoughtful Writing Bit Meter</title>
 <meta name="description" content="Prototype writing assistant that scores every word in bits and shows how many came from the writer.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -5,7 +12,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
 <style>
 /* Layout: a writing sheet on the left with the choice row under it (as in the paper sketch),
-   Thinking Box and meter on the right, and a full-width bit strip that reads like the text itself. */
+   the plan and meter on the right, and a full-width bit strip that reads like the text itself. */
 :root {
   --bg: #eceff4;
   --sheet: #ffffff;
@@ -37,6 +44,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { background: var(--bg); color: var(--ink); }
 body { font-family: var(--sans); font-size: 14px; line-height: 1.5; }
 .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 48px; display: flex; flex-direction: column; gap: 18px; }
@@ -69,7 +77,33 @@ select, input[type="text"], input[type="url"] {
 
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: start; }
 @media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Chat sidebar (collapsible) — Simon */
+.grid.chat-open { grid-template-columns: 300px minmax(0, 1fr) 320px; }
+.chat { display: none; flex-direction: column; gap: 10px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); padding: 12px 14px; }
+.grid.chat-open .chat { display: flex; }
+.chat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.chat-head h2 { margin: 0; }
+.chat-toggle { padding: 2px 8px; line-height: 1; }
+.chat-log { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 420px; min-height: 120px; }
+.chat-msg { border-radius: 8px; padding: 8px 10px; font-size: 0.9rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-msg.user { background: color-mix(in srgb, var(--typed) 12%, var(--sheet)); align-self: flex-end; }
+.chat-msg.assistant { background: var(--soft); align-self: flex-start; }
+.chat-msg.thinking { display: flex; align-items: center; gap: 8px; color: var(--muted); font-style: italic; }
+.chat-msg.thinking .dots { display: inline-flex; gap: 3px; }
+.chat-msg.thinking .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: think 1.2s infinite ease-in-out; }
+.chat-msg.thinking .dots i:nth-child(2) { animation-delay: 0.2s; }
+.chat-msg.thinking .dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes think { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .chat-msg.thinking .dots i { animation: none; } }
+.chat-msg.error { background: color-mix(in srgb, var(--gen) 12%, var(--sheet)); align-self: flex-start; }
+.chat-msg .retry { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; }
+.chat-input { display: flex; flex-direction: column; gap: 8px; }
+.chat-input textarea { width: 100%; min-height: 60px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--soft); font-family: var(--serif); font-size: 0.95rem; line-height: 1.5; }
+.chat-input button { align-self: flex-end; }
+.chat-note { color: var(--muted); font-size: 0.78rem; }
 @media (max-width: 1100px) { .grid.chat-open { grid-template-columns: minmax(0, 1fr) 320px; } .grid.chat-open .chat { grid-column: 1 / -1; order: -1; } }
+@media (max-width: 860px) { .grid.chat-open { grid-template-columns: minmax(0, 1fr); } }
 
 .writer { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .sheet {
@@ -106,7 +140,7 @@ select, input[type="text"], input[type="url"] {
 .pill.err { background: color-mix(in srgb, var(--gen) 12%, var(--sheet)); border-color: color-mix(in srgb, var(--gen) 45%, transparent); color: var(--gen); }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-.slots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.slots { display: grid; grid-template-columns: repeat(var(--k, 5), minmax(0, 1fr)); gap: 8px; }
 @media (max-width: 560px) { .slots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .slot {
   display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 9px 11px; border-radius: 8px;
@@ -121,6 +155,7 @@ select, input[type="text"], input[type="url"] {
 .slots.fork .slot .pb i { background: var(--typed); }
 .slots.quiet .slot { opacity: 0.62; }
 .slots.quiet .slot:hover { opacity: 1; }
+.slots.stale .slot { opacity: 0.45; }
 .slot.empty { visibility: hidden; }
 .keys { color: var(--muted); font-size: 0.82rem; }
 kbd {
@@ -129,29 +164,6 @@ kbd {
 }
 
 .side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-
-/* Chat sidebar (collapsible, VS Code style) */
-.grid.chat-open { grid-template-columns: 300px minmax(0, 1fr) 320px; }
-.chat { display: none; flex-direction: column; gap: 10px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--sheet); padding: 12px 14px; }
-.grid.chat-open .chat { display: flex; }
-.chat-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.chat-head h2 { margin: 0; }
-.chat-toggle { padding: 2px 8px; line-height: 1; }
-.chat-log { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; max-height: 420px; min-height: 120px; }
-.chat-msg { border-radius: 8px; padding: 8px 10px; font-size: 0.9rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
-.chat-msg.user { background: color-mix(in srgb, var(--typed) 12%, var(--sheet)); align-self: flex-end; }
-.chat-msg.assistant { background: var(--soft); align-self: flex-start; }
-.chat-msg.thinking { display: flex; align-items: center; gap: 8px; color: var(--muted); font-style: italic; }
-.chat-msg.thinking .dots { display: inline-flex; gap: 3px; }
-.chat-msg.thinking .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: think 1.2s infinite ease-in-out; }
-.chat-msg.thinking .dots i:nth-child(2) { animation-delay: 0.2s; }
-.chat-msg.thinking .dots i:nth-child(3) { animation-delay: 0.4s; }
-@keyframes think { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
-.chat-msg.error { background: color-mix(in srgb, var(--danger, #e5484d) 12%, var(--sheet)); align-self: flex-start; }
-.chat-msg .retry { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; }
-.chat-input { display: flex; flex-direction: column; gap: 8px; }
-.chat-input textarea { width: 100%; min-height: 60px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--soft); font-family: var(--serif); font-size: 0.95rem; line-height: 1.5; }
-.chat-input button { align-self: flex-end; }
 .panel { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .panel textarea {
   width: 100%; min-height: 110px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
@@ -217,6 +229,21 @@ pre.log {
 }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .toast { color: var(--chose); font-size: 0.84rem; }
+.split { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.split table { min-width: 0; font-size: 0.78rem; }
+.split th, .split td { padding: 4px 6px; }
+.split td:nth-child(3), .split td:nth-child(4) { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.chat-msg .bits { display: block; margin-top: 4px; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); font-style: normal; }
+.nv { display: flex; flex-direction: column; gap: 8px; }
+.nv .bars { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 5px 8px; align-items: center; font-size: 0.8rem; }
+.nv .bars span { color: var(--muted); }
+.nv .bars b { font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
+.nv .track { height: 10px; background: var(--soft); border-radius: 2px; overflow: hidden; display: flex; }
+.nv .track i { display: block; height: 100%; }
+.nv .verdict { font-size: 0.84rem; }
+.nv table { min-width: 0; font-size: 0.76rem; }
+.nv th, .nv td { padding: 4px 6px; }
+.nv td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 </style>
 
 <div class="wrap" id="app">
@@ -233,14 +260,14 @@ pre.log {
           <option value="generate">Generate paragraphs</option>
         </select>
       </label>
-      <button id="newBtn" type="button">New session</button>
       <button id="chatToggle" type="button" aria-expanded="false">Chat</button>
+      <button id="newBtn" type="button">New session</button>
     </div>
   </header>
 
-  <div class="note" id="exampleNote">
-    <span>Example session: a simulated writer at the default settings, using the built-in demo model. Hover the bars below to inspect each word.</span>
-    <button class="primary" id="startBtn" type="button">Start writing</button>
+  <div class="note" id="connNote">
+    <span id="connMsg">Connecting to the class server…</span>
+    <button class="primary" id="retryBtn" type="button" hidden>Try again</button>
   </div>
 
   <main class="grid" id="grid">
@@ -251,9 +278,10 @@ pre.log {
       </div>
       <div class="chat-log" id="chatLog" aria-live="polite"></div>
       <form class="chat-input" id="chatForm">
-        <textarea id="chatBox" placeholder="Ask the model… (conversation steers suggestions)" aria-label="Chat message"></textarea>
+        <textarea id="chatBox" placeholder="Ask the model… (the conversation steers suggestions)" aria-label="Chat message"></textarea>
         <button type="submit">Send</button>
       </form>
+      <p class="chat-note">The model sees this conversation before your plan, so it shapes the suggestions and the bit scores.</p>
     </aside>
     <section class="writer" aria-label="Writing area">
       <div class="sheet" id="sheet">
@@ -264,30 +292,33 @@ pre.log {
       <div class="slots" id="slots"></div>
       <div class="btn-row" id="genRow" hidden>
         <button class="primary" id="genBtn" type="button">Generate a paragraph</button>
-        <span class="hint">Write your prompt in the Thinking Box first. Generated words count 0 human bits; the prompt counts as steering bits.</span>
+        <span class="hint">Write your plan first. Generated words count 0 human bits; the plan counts as plan bits.</span>
       </div>
       <p class="keys" id="keys">
-        <kbd>Tab</kbd> accept next word · <kbd>Shift</kbd>+<kbd>Tab</kbd> accept the grey phrase · <span id="pickKeyLabel"><kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>4</kbd></span> choose an option · type letters to filter · <kbd>Esc</kbd> hide suggestions
+        <kbd>Tab</kbd> accept next word · <kbd>Shift</kbd>+<kbd>Tab</kbd> accept the grey phrase · <span id="pickKeyLabel"><kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>5</kbd></span> choose an option · keep typing to narrow the options · <kbd>Esc</kbd> hide suggestions
       </p>
     </section>
 
     <aside class="side">
       <section class="panel">
-        <h2><label for="notes">Thinking Box</label></h2>
-        <textarea id="notes" placeholder="What are you trying to say? Notes here steer the suggestions."></textarea>
-        <p class="hint">Notes steer the model and count as your steering bits.</p>
+        <h2><label for="notes">Your plan</label></h2>
+        <textarea id="notes" placeholder="What do you want to say? A few key ideas are enough."></textarea>
+        <p class="hint">The AI reads this as your request, like a message to a chatbot. Instead of the AI writing the reply, you write it and the AI only predicts. Ideas you put here count as your bits.</p>
+        <div class="btn-row"><button id="measureBtn" type="button">Measure what the plan saved</button></div>
+        <div id="notesValue"></div>
       </section>
       <section class="panel" aria-label="Meter">
         <h2>Meter</h2>
-        <div class="big"><span class="n" id="controlPct">0%</span><span class="l">human share<br>of all bits</span></div>
+        <div class="big"><span class="n" id="controlPct">0%</span><span class="l">human share<br>of plan + text</span></div>
         <div class="stack" id="stack" aria-hidden="true"></div>
         <div class="stack-key">
           <span><i class="sw" style="background:var(--typed)"></i>typed</span>
           <span><i class="sw" style="background:var(--chose)"></i>chosen</span>
-          <span><i class="sw" style="background:var(--steer)"></i>steering</span>
+          <span><i class="sw" style="background:var(--steer)"></i>plan</span>
           <span><i class="sw" style="background:var(--ai)"></i>model</span>
         </div>
         <dl class="kv" id="kv"></dl>
+        <div id="splitBox"></div>
       </section>
     </aside>
   </main>
@@ -321,24 +352,23 @@ pre.log {
         <span class="row"><input type="range" id="ghostMax" min="1" max="12" step="1" value="6"><b class="mono" id="ghostOut">6 words</b></span>
       </label>
       <label class="field" for="kOpt"><span>Options shown</span>
-        <select id="kOpt"><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select>
+        <select id="kOpt"><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5" selected>5</option></select>
+      </label>
+      <label class="field" for="wordsOpt"><span>Words per option</span>
+        <select id="wordsOpt"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select>
       </label>
       <label class="field" for="pickKeys"><span>Choice keys</span>
         <select id="pickKeys">
-          <option value="alt">Alt + 1–4 (always)</option>
-          <option value="bare">1–4 at a fork, digits otherwise</option>
+          <option value="alt">Alt + number (always)</option>
+          <option value="bare">Number alone at a fork, digits otherwise</option>
         </select>
       </label>
       <label class="field" for="showSrc"><span>Underline words by source</span>
         <span class="row"><input type="checkbox" id="showSrc" checked> <span class="hint">Shows who supplied each word while writing</span></span>
       </label>
-      <label class="field" for="backend"><span>Model</span>
-        <select id="backend">
-          <option value="demo">Built-in demo model (trigram, runs in the page)</option>
-          <option value="vllm">Class vLLM server (Qwen)</option>
-        </select>
-        <span class="hint" id="backendHint"></span>
-      </label>
+      <div class="field"><span>Model server</span>
+        <span class="hint" id="backendHint">Connects to Prof. Arnold's vLLM server on load and picks the Qwen 3.8 model.</span>
+      </div>
       <label class="field" for="vurl"><span>vLLM address</span>
         <input type="url" id="vurl" value="https://vllm.thoughtful-ai.com" spellcheck="false">
       </label>
@@ -362,11 +392,13 @@ pre.log {
           <tr><td>Typed a few letters, then picked or pressed Tab</td><td><code>−log₂ P(prefix)</code> + the choice bits</td><td>The letters narrowed the options; the pick finished the decision.</td></tr>
           <tr><td>Accepted grey text with Tab</td><td>0</td><td>The model decided it. (A stricter count would credit a little for not rejecting it.)</td></tr>
           <tr><td>Generated paragraph</td><td>0</td><td>The model wrote it without review.</td></tr>
-          <tr><td>Thinking Box notes</td><td>Their surprisal (steering bits)</td><td>Counts toward the human share: (your bits + steering) ÷ (all bits + steering).</td></tr>
+          <tr><td>Your plan</td><td>Its surprisal (plan bits)</td><td>Counts toward the human share: (your bits + plan bits) ÷ (all bits + plan bits).</td></tr>
+          <tr><td>Chat (your messages / AI replies)</td><td>Their surprisal, scored in place in the conversation</td><td>Your messages count as your bits, AI replies as AI bits. Each part is scored given everything before it, so ideas from a reply make your later text cheaper. “Human share including the chat” = (your text bits + plan + your messages) ÷ (all of those + AI replies).</td></tr>
+          <tr><td>Plan measurement</td><td>saved = bits(text, no plan) − bits(text | plan)</td><td>“Used” = saved ÷ plan bits: how much of the plan's information ended up in the text.</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="hint">The demo model is a small trigram model trained on a few paragraphs, so its numbers are only illustrative. Open the downloaded page to use the class Qwen server for real probabilities, and rescore the exported logs with <code>score_sessions.py</code> so every condition is measured by the same model.</p>
+    <p class="hint">With the class server, the model sees a chat: your plan is the request and your text is the reply. Predictions use the token engine from Prof. Arnold's writing-prototypes (token healing, whole-word options). An option with several words counts its choice bits once, on its first word. Rescore the exported logs with <code>score_sessions.py</code> so every condition is measured by the same model.</p>
   </details>
 
   <details class="panel" id="logPanel">
@@ -380,333 +412,446 @@ pre.log {
   </details>
 </div>
 
+<!-- Optional: config.js can set window.DEEPSEEK_CONFIG = { url, model, apiKey } for chat replies.
+     Keep config.js out of GitHub (it holds an API key); without it, chat uses the class vLLM server. -->
 <script src="config.js"></script>
 <script>
 "use strict";
-/* ================= Demo corpus (original text) ================= */
-const CORPUS = `Eating fruit every day is one of the simplest ways to improve your health. Fruit is rich in vitamins, minerals, and fiber, and it is naturally low in fat and sodium. People who eat more fruit tend to have a lower risk of heart disease, stroke, and type 2 diabetes. Fruit also helps with digestion because the fiber keeps things moving and feeds the good bacteria in the gut.
-
-Not all fruit is the same. Berries are full of antioxidants, which protect cells from damage. Oranges and other citrus fruits are a good source of vitamin C, which supports the immune system. Bananas provide potassium, which helps control blood pressure. Apples are easy to carry and keep you full for a long time. Whole fruit is usually better than juice, because juice removes much of the fiber and adds a lot of sugar.
-
-The best way to eat more fruit is to make it easy. Keep a bowl of fruit on the kitchen table, add berries to your breakfast, and pack an apple or a banana for lunch. Frozen fruit is cheap, lasts a long time, and works well in smoothies. For college students, a banana or an apple between classes is an easy snack that keeps you full during long study sessions. Small changes like these add up over time and can make a real difference to your health.
-
-Writing is a way of thinking. When you write, you have to decide what you actually believe and how to explain it to someone else. This is why writing is hard, and it is also why writing is valuable. A good writer does not simply put words on a page. A good writer makes choices about what to say, what to leave out, and how to say it clearly.
-
-Many students now use AI tools to help them write. These tools can generate a paragraph in a few seconds, and the result often looks polished. But when the AI writes the paragraph, the ideas in it are the AI's ideas, not the student's. The student becomes an editor of someone else's first draft. Over time, this can make writing less personal and less thoughtful.
-
-There is another way to use AI in writing. Instead of generating whole paragraphs, the tool can suggest the next word or a short phrase. The writer can accept a suggestion, choose a different one, or ignore it and keep typing. In this way the AI helps with the easy parts of writing, while the writer stays in control of the important decisions. The model is in the room, but it is not holding the pen.
-
-To know whether a writing tool keeps the writer in control, we need a way to measure it. One idea is to count bits of information. Each word in a text carries some amount of information, depending on how surprising it is to the model. A predictable word carries only a few bits, and a surprising word carries many bits. If we know who chose each word, we can measure how many bits came from the writer and how many came from the model.
-
-This gives us a simple way to compare different tools. With plain typing, the writer provides all of the information, but writing is slow. With full generation, writing is fast, but the writer provides very little information. A good tool should let the writer work quickly while still making most of the important decisions. The goal is a writing tool, not a writing machine.
-
-Our study will ask students to write a short essay in three different ways. First, they will write with plain typing. Then they will write with a tool that generates whole paragraphs. Finally, they will write with our tool, which suggests words and asks the writer to choose at the important moments. We will measure how fast they write, how many bits of information they provide, and how much the final text feels like their own.`;
-
-const EXAMPLE_NOTES = "fruit for busy college students";
-const EXAMPLE_TEXT = "Eating fruit every day is one of the simplest ways to improve your health. For busy college students, a banana or an apple between classes is an easy snack that keeps you focused during long study sessions.";
-
-/* ================= Tokens ================= */
-const WORD_RE = /\n|[ \t]*[A-Za-z0-9][A-Za-z0-9'’-]*|[ \t]*[^\sA-Za-z0-9]/g;
-const tok = s => s.match(WORD_RE) || [];
-const normOf = u => {
-  if (u === "\n") return "¶";
-  const t = u.trim().toLowerCase().replace(/’/g, "'");
-  return t || "¶";
-};
-const PARA = "¶";
-const isWordNorm = n => /^[a-z0-9]/.test(n);
-const ENDERS = new Set([".", "!", "?", PARA]);
+/* ================= Helpers ================= */
+const PARA = "\u00b6";
+const normOf = u => { if (u === "\n") return PARA; const t = u.trim().toLowerCase().replace(/\u2019/g, "'"); return t || PARA; };
 const LOG2 = x => Math.log(x) / Math.LN2;
 const bitsOf = p => -LOG2(Math.max(p, 1e-12));
-const charShare = w => Math.pow(2, -2.5 * Math.max(1, w.length));
-
-function displayText(n, prev) {
-  if (n === PARA) return "\n";
-  if (!isWordNorm(n)) return n;
-  const cap = !prev || ENDERS.has(prev);
-  let w = n === "i" ? "I" : n;
-  if (cap) w = w[0].toUpperCase() + w.slice(1);
-  const sp = (!prev || prev === PARA) ? "" : " ";
-  return sp + w;
-}
-
-/* ================= Demo trigram model (Witten-Bell) ================= */
-const UNK = 0.01, BETA = 0.06, GAMMA = 0.3;
-function buildModel(text) {
-  const uni = new Map(), bi = new Map(), tri = new Map(); let N = 0;
-  const add = (m, h, w) => { let x = m.get(h); if (!x) { x = { c: 0, f: new Map() }; m.set(h, x); } x.c++; x.f.set(w, (x.f.get(w) || 0) + 1); };
-  for (const para of text.split(/\n\s*\n/)) {
-    const ns = [PARA, PARA, ...tok(para.trim()).map(normOf), PARA];
-    for (let i = 2; i < ns.length; i++) {
-      const w = ns[i]; uni.set(w, (uni.get(w) || 0) + 1); N++;
-      add(bi, ns[i - 1], w); add(tri, ns[i - 2] + "\u0001" + ns[i - 1], w);
-    }
-  }
-  return { uni, bi, tri, N, vocab: [...uni.keys()], cache: new Map() };
-}
-const MODEL = buildModel(CORPUS);
-
-function notesMap(notes) {
-  const m = new Map(); let total = 0;
-  for (const t of tok(notes || "")) { const n = normOf(t); if (!isWordNorm(n)) continue; m.set(n, (m.get(n) || 0) + 1); total++; }
-  return { m, total };
-}
-
-function demoDist(ctx, nm) {
-  const key = ctx[0] + "\u0001" + ctx[1];
-  const hit = MODEL.cache.get(key); if (hit) return hit;
-  const T3 = MODEL.tri.get(key), T2 = MODEL.bi.get(ctx[1]);
-  const wb = (node, cnt, lower) => node ? (cnt + GAMMA * node.f.size * lower) / (node.c + GAMMA * node.f.size) : lower;
-  const beta = nm && nm.total ? BETA : 0;
-  const cand = new Set(MODEL.vocab); if (nm) for (const w of nm.m.keys()) cand.add(w);
-  let pu = wb(T3, 0, wb(T2, 0, UNK));
-  const items = [];
-  for (const w of cand) {
-    const c1 = MODEL.uni.get(w) || 0;
-    let p;
-    if (c1) {
-      const p1 = (1 - UNK) * c1 / MODEL.N;
-      p = wb(T3, T3 ? (T3.f.get(w) || 0) : 0, wb(T2, T2 ? (T2.f.get(w) || 0) : 0, p1));
-    } else p = pu * charShare(w);
-    p = (1 - beta) * p + (beta ? beta * (nm.m.get(w) || 0) / nm.total : 0);
-    items.push({ n: w, p });
-  }
-  pu *= (1 - beta);
-  items.sort((a, b) => b.p - a.p);
-  let H = pu > 0 ? -pu * LOG2(pu) : 0;
-  for (const o of items) if (o.p > 0) H -= o.p * LOG2(o.p);
-  const index = new Map(items.map(o => [o.n, o]));
-  const d = { items, unk: pu, H, index };
-  MODEL.cache.set(key, d);
-  return d;
-}
-const demoProb = (d, n) => { const o = d.index.get(n); return o ? o.p : d.unk * charShare(n); };
 
 /* ================= State ================= */
 const S = {
   units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [],
   startT: null, lastT: null, startedAt: new Date().toISOString(),
-  mode: "assist", notes: "", noteBits: 0, nm: null,
-  chat: [], chatOpen: false,
-  sugg: null, hidden: false, reqId: 0, err: null, example: false,
-  settings: { thr: 2.5, ghostMax: 6, k: 4, pickKeys: "alt", showSrc: true, backend: "demo", url: "https://vllm.thoughtful-ai.com", model: "" },
+  mode: "assist", notes: "", noteBits: 0, nm: null, notesHistory: [], measuring: false, measureErr: null,
+  // Earlier chat turns, sent to the model before the plan. Each is {role: "user" | "assistant", content}.
+  // Simon: the chat box can fill this; predictions and bit scoring both read it.
+  chat: [], chatOpen: false, split: null,
+  sugg: null, hidden: false, err: null, warn: "", connected: false, connecting: false,
+  settings: { thr: 2.5, ghostMax: 6, k: 5, words: 1, pickKeys: "alt", showSrc: true, url: "https://vllm.thoughtful-ai.com", model: "" },
 };
 const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
-const isDemo = () => S.settings.backend === "demo";
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 const logEv = (e, extra) => S.events.push(Object.assign({ t: Math.round(now()), e }, extra || {}));
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
+const ALT = IS_MAC ? "⌥" : "Alt+";
 
 function markKey() {
   S.keystrokes++; S.pendingKeys++;
   const t = now(); if (S.startT === null) S.startT = t; S.lastT = t;
 }
 const docText = (units = S.units) => units.map(u => u.text).join("");
-const lastNorm = () => S.units.length ? S.units[S.units.length - 1].n : null;
+const draftText = () => docText() + S.buffer;
+const isVisibleUnit = u => u.text.trim() !== "" || u.text === "\n";
+const lastNorm = () => { for (let i = S.units.length - 1; i >= 0; i--) if (isVisibleUnit(S.units[i])) return S.units[i].n; return null; };
 const ctxNorms = (units = S.units) => {
-  const L = units.length;
-  return [L > 1 ? units[L - 2].n : PARA, L > 0 ? units[L - 1].n : PARA];
+  const ns = units.filter(isVisibleUnit).map(u => u.n), L = ns.length;
+  return [L > 1 ? ns[L - 2] : PARA, L > 0 ? ns[L - 1] : PARA];
 };
+// Split text into word-sized pieces without losing any characters.
+const PIECE_RE = /\n|[ \t]*[A-Za-z0-9][A-Za-z0-9'’-]*|[ \t]*[^\sA-Za-z0-9]|[ \t]+/g;
+const pieces = s => s.match(PIECE_RE) || [];
+// Leading whitespace plus the first n whitespace-delimited words.
+function firstWords(text, n) {
+  const m = text.match(new RegExp(`^\\s*\\S+(?:[ \\t]+\\S+){0,${n - 1}}`));
+  return m ? m[0] : text;
+}
+const sumBits = toks => toks.reduce((a, t) => a + t.bits, 0);
+function entropyOf(items) {
+  const ps = items.map(o => o.prob || 0), s = ps.reduce((a, b) => a + b, 0);
+  if (!s) return 0;
+  const norm = s > 1 ? s : 1, rest = Math.max(0, 1 - s);
+  let H = rest > 1e-9 ? -rest * LOG2(rest) : 0;
+  for (const p of ps) { const q = p / norm; if (q > 0) H -= q * LOG2(q); }
+  return H;
+}
 
-/* ================= vLLM backend ================= */
-const chatContext = () => S.chat.length
-  ? "\n\n<conversation>\n" + S.chat.map(m => `<${m.role === "user" ? "writer" : "assistant"}>\n${m.content}\n</${m.role === "user" ? "writer" : "assistant"}>`).join("\n") + "\n</conversation>\n"
-  : "";
-const promptHeader = () => {
-  const parts = [];
-  if (S.notes.trim()) parts.push(`<notes>\n${S.notes.trim()}\n</notes>`);
-  parts.push(`<draft>\n`);
-  return chatContext() + parts.join("\n\n");
-};
-const promptText = (units = S.units) => promptHeader() + docText(units) + "\n</draft>";
-async function vcall(body) {
-  const t0 = now();
-  const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/completions", {
-    method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(Object.assign({ model: S.settings.model }, body)),
+/* ================= Model server ================= */
+// Ported from AIToolsLab/writing-prototypes, docs/llm.js (Nov 2026). Prompts use the model's chat
+// template with thinking off; response text is appended to the rendered prefix ourselves, so the
+// template can't trim its whitespace.
+const CHAT_TEMPLATE_KWARGS = { enable_thinking: false };
+const baseUrl = () => S.settings.url.replace(/\/+$/, "");
+async function post(path, body, signal) {
+  const res = await fetch(baseUrl() + path, {
+    method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal,
   });
-  if (!res.ok) throw new Error(`vLLM answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
-  return { j: await res.json(), ms: now() - t0 };
+  if (!res.ok) throw new Error(`${path}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  return res.json();
 }
-function positionsFrom(lp) {
-  return lp.tokens.map((tk, i) => {
-    const top = (lp.top_logprobs && lp.top_logprobs[i]) || {};
-    const items = Object.entries(top).map(([text, l]) => ({ text, n: text, p: Math.exp(l) })).sort((a, b) => b.p - a.p);
-    const mass = items.reduce((s, o) => s + o.p, 0), rest = Math.max(0, 1 - mass);
-    let H = rest > 1e-9 ? -rest * LOG2(rest) : 0;
-    for (const o of items) if (o.p > 0) H -= o.p * LOG2(o.p);
-    return { tok: tk, p: Math.exp(lp.token_logprobs[i]), items, H, rest };
-  }).filter(x => x.tok !== "");
-}
-function suggFromPositions(pos, ms) {
-  if (!pos || !pos.length) return null;
-  const thr = S.settings.thr, first = pos[0];
-  const ghost = [];
-  if (first.H < thr) for (let i = 0; i < pos.length; i++) { if (i > 0 && pos[i].H >= thr) break; ghost.push({ text: pos[i].tok, n: pos[i].tok, p: pos[i].p }); }
-  return { items: first.items, unk: first.rest, H: first.H, ghost, pos, ms };
-}
-const VLLM = {
-  async suggest() {
-    const { j, ms } = await vcall({ prompt: promptText(), max_tokens: S.settings.ghostMax, temperature: 0, logprobs: 20 });
-    return suggFromPositions(positionsFrom(j.choices[0].logprobs), ms);
-  },
-  async score(prefix, span) {
-    const { j } = await vcall({ prompt: prefix + span, max_tokens: 1, temperature: 0, logprobs: 1, echo: true });
-    const lp = j.choices[0].logprobs; let bits = 0;
-    for (let i = 0; i < lp.tokens.length; i++) {
-      const off = lp.text_offset[i];
-      if (off >= prefix.length && off < prefix.length + span.length && lp.token_logprobs[i] != null) bits += -lp.token_logprobs[i] / Math.LN2;
-    }
-    return bits;
-  },
-  async generate() {
-    const { j } = await vcall({ prompt: promptText(), max_tokens: 80, temperature: 0.8, logprobs: 1 });
-    return positionsFrom(j.choices[0].logprobs).map(x => ({ text: x.tok, n: x.tok, p: x.p }));
-  },
-  async connect() {
-    const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/models", { credentials: "omit" });
-    if (!res.ok) throw new Error(`vLLM answered ${res.status}`);
-    const j = await res.json();
-    const ids = (j.data || []).map(m => m.id);
-    $("vmodels").innerHTML = ids.map(id => `<option value="${esc(id)}"></option>`).join("");
-    return ids.find(id => /3\.8/.test(id)) || ids[0] || "";
-  },
-  async chat(messages) {
-    const t0 = now();
-    const cfg = (typeof window !== "undefined" && window.DEEPSEEK_CONFIG) || null;
-    if (cfg && cfg.apiKey && cfg.apiKey !== "PASTE_YOUR_API_KEY_HERE") {
-      try {
-        const res = await fetch(cfg.url.replace(/\/+$/, "") + "/api/chat/completions", {
-          method: "POST", credentials: "omit",
-          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.apiKey },
-          body: JSON.stringify({ model: cfg.model, messages, max_tokens: 800, temperature: 0.7, stream: false }),
-        });
-        if (!res.ok) throw new Error(`DeepSeek answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
-        const text = await res.text();
-        // The Open WebUI endpoint returns an SSE stream even with stream:false.
-        // Parse the "data:" lines and collect the final content deltas.
-        let reply = "";
-        for (const line of text.split("\n")) {
-          if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6).trim();
-          if (!payload || payload === "[DONE]") continue;
-          try {
-            const obj = JSON.parse(payload);
-            const delta = (obj.choices && obj.choices[0] && obj.choices[0].delta) || {};
-            if (delta.content) reply += delta.content;
-          } catch (e) { /* skip malformed lines */ }
-        }
-        if (!reply) throw new Error("DeepSeek returned an empty reply");
-        return { text: reply, ms: now() - t0, backend: "deepseek" };
-      } catch (e) {
-        // Fall back to the class vLLM server below.
-      }
-    }
-    const res = await fetch(S.settings.url.replace(/\/+$/, "") + "/v1/chat/completions", {
-      method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: S.settings.model, messages, max_tokens: 800, temperature: 0.7 }),
-    });
-    if (!res.ok) throw new Error(`vLLM answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
-    const j = await res.json();
-    return { text: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "", ms: now() - t0, backend: "vllm" };
-  },
-};
-
-/* ================= Demo backend ================= */
-function demoGreedy(ctx, prev, steps) {
-  let c = [ctx[0], ctx[1]], pv = prev, out = [];
-  for (let i = 0; i < steps; i++) {
-    const d = demoDist(c, S.nm); const top = d.items[0];
-    if (!top || top.n === PARA) break;
-    out.push(displayText(top.n, pv)); c = [c[1], top.n]; pv = top.n;
+const prefixCache = new Map();
+function cached(key, fn) {
+  key = S.settings.url + "|" + S.settings.model + "|" + key;
+  if (!prefixCache.has(key)) {
+    const promise = fn();
+    promise.catch(() => { if (prefixCache.get(key) === promise) prefixCache.delete(key); });
+    prefixCache.set(key, promise);
+    if (prefixCache.size > 16) prefixCache.delete(prefixCache.keys().next().value);
   }
-  return out.join("");
+  return prefixCache.get(key);
 }
-const DEMO = {
-  suggest() {
-    const t0 = now();
-    const ctx = ctxNorms(), prev = lastNorm(), thr = S.settings.thr;
-    const d = demoDist(ctx, S.nm);
-    const items = d.items.filter(o => o.n !== PARA).map(o => ({ n: o.n, p: o.p, text: displayText(o.n, prev) }));
-    const ghost = [];
-    if (d.H < thr) {
-      let c = ctx.slice(), pv = prev;
-      for (let i = 0; i < S.settings.ghostMax; i++) {
-        const dd = i === 0 ? d : demoDist(c, S.nm);
-        if (i > 0 && dd.H >= thr) break;
-        const top = dd.items[0]; if (!top || top.n === PARA) break;
-        ghost.push({ n: top.n, p: top.p, text: displayText(top.n, pv) });
-        c = [c[1], top.n]; pv = top.n;
+// The chat-templated prompt for `messages`, ending with the assistant generation prompt.
+function chatPrefix(messages) {
+  return cached(JSON.stringify(["assistant", messages]), async () => {
+    const { tokens } = await post("/tokenize", { model: S.settings.model, messages, add_generation_prompt: true, chat_template_kwargs: CHAT_TEMPLATE_KWARGS });
+    const { prompt } = await post("/detokenize", { model: S.settings.model, tokens });
+    return { ids: tokens, text: prompt };
+  });
+}
+// The prompt up to the start of a message from `role` after `history`.
+const PLACEHOLDER = "XYZZYPLACEHOLDER";
+function turnPrefix(history, role) {
+  if (role === "assistant") return chatPrefix(history);
+  return cached(JSON.stringify([role, history]), async () => {
+    const { tokens } = await post("/tokenize", { model: S.settings.model, messages: [...history, { role, content: PLACEHOLDER }], add_generation_prompt: false, chat_template_kwargs: CHAT_TEMPLATE_KWARGS });
+    const { prompt } = await post("/detokenize", { model: S.settings.model, tokens });
+    const cut = prompt.lastIndexOf(PLACEHOLDER);
+    if (cut === -1) throw new Error("Couldn't find the start of the message in the chat template");
+    return { text: prompt.slice(0, cut) };
+  });
+}
+// Keeps generation from ending the turn; reported logprobs are from before the bias.
+function noEndBias() {
+  return cached("noEndBias", async () => {
+    const { tokens } = await post("/tokenize", { model: S.settings.model, prompt: "<|im_end|><|endoftext|>", add_special_tokens: false });
+    return Object.fromEntries(tokens.map(id => [id, -100]));
+  });
+}
+const completions = (body, signal) => post("/v1/completions", Object.assign({ model: S.settings.model }, body), signal);
+const isSpecialToken = tok => /^<\|.*\|>$/.test(tok);
+
+/* ---- The writer's plan, as the request in a chat ---- */
+const BASE_REQUEST = "Help me write a short piece.";
+const REQUEST_HEAD = `${BASE_REQUEST} Here is what I want to say:\n\n`;
+const requestText = (notes = S.notes) => notes.trim() ? REQUEST_HEAD + notes.trim() : BASE_REQUEST;
+const chatTurns = () => S.chat.filter(m => !m.thinking && !m.error && m.content).map(m => ({ role: m.role, content: m.content }));
+const historyFor = (notes = S.notes) => [...chatTurns(), { role: "user", content: requestText(notes) }];
+const messagesFor = (draft, notes = S.notes) => [...historyFor(notes), { role: "assistant", content: draft }];
+
+/* ---- Scoring: bits of each token of `span`, which ends the prompt ---- */
+// Returns [{at, bits}], where `at` is the offset in `span` of the token's first non-space character.
+async function scoreSpan(prefix, span, signal) {
+  if (!span) return [];
+  const res = await completions({ prompt: prefix + span, max_tokens: 1, temperature: 0, prompt_logprobs: 1, return_token_ids: true }, signal);
+  const { prompt_logprobs: plp, prompt_token_ids: ids } = res.choices[0];
+  const out = [];
+  let end = span.length;
+  for (let i = ids.length - 1; i >= 0 && end > 0; i--) {
+    const e = plp[i] && plp[i][String(ids[i])];
+    if (!e) break;
+    const t = e.decoded_token ?? "", start = end - t.length;
+    const lead = t.length - t.trimStart().length;
+    const at = lead < t.length ? start + lead : start;
+    if (at >= 0) out.push({ at, bits: -e.logprob / Math.LN2 });
+    end = start;
+  }
+  return out.reverse();
+}
+
+/* ---- Predictions ---- */
+// Ported from AIToolsLab/writing-prototypes, docs/engine-tokens.js (Nov 2026): token healing at the
+// last pre-token boundary, two spines with alternatives, then one batched extension to whole words.
+// Changes here: returns the top branch so we can extend it into grey text.
+const PRETOKENIZE_REGEX = /'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD]|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+/gu;
+function splitLastPretoken(text) {
+  let start = text.length;
+  for (const match of text.matchAll(PRETOKENIZE_REGEX)) start = match.index;
+  return [text.slice(0, start), text.slice(start)];
+}
+function startsWith(text) {
+  const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return { structured_outputs: { regex: escaped + "[\\s\\S]*" } };
+}
+const NUM_SUGGESTIONS = 5;
+async function tokenSuggestions({ messages, words, onUpdate }, signal) {
+  const { role, content: draft } = messages.at(-1);
+  const [base, typed] = splitLastPretoken(draft);
+  const [prefix, logitBias] = await Promise.all([turnPrefix(messages.slice(0, -1), role), noEndBias()]);
+  const prompt = prefix.text + base;
+  const spineParams = { logprobs: 20, temperature: 0, logit_bias: logitBias, return_token_ids: true };
+  const [unhealedRes, healedRes] = await Promise.all([
+    completions(Object.assign({ prompt: prefix.text + draft, max_tokens: 3, prompt_logprobs: 1 }, spineParams), signal),
+    typed && completions(Object.assign({ prompt, max_tokens: 3 + Math.ceil(typed.length / 4) }, spineParams, startsWith(typed)), signal),
+  ]);
+  const unhealed = unhealedRes.choices[0];
+  const baseIds = typed ? healedRes.choices[0].prompt_token_ids : unhealed.prompt_token_ids;
+  const warning = boundaryWarning(baseIds, unhealed.prompt_token_ids, base) ||
+    (!typed || healedRes.choices[0].text.startsWith(typed) ? "" : "The server ignored the constraint to continue the partial word, so predictions may be missing.");
+  const typedLogprob = unhealed.prompt_token_ids.slice(baseIds.length)
+    .reduce((sum, id, j) => sum + unhealed.prompt_logprobs[baseIds.length + j][String(id)].logprob, 0);
+  let branches = spineBranches(unhealed.logprobs, typed, typed, typedLogprob);
+  if (typed) branches.push(...spineBranches(healedRes.choices[0].logprobs, typed, "", 0));
+  branches.sort((a, b) => b.prob - a.prob);
+  branches = branches.filter((b, i) => branches.findIndex(c => c.forced === b.forced) === i);
+  const shown = new Set();
+  branches = branches.filter(b => {
+    b.final = completeWords(b.forced.slice(typed.length), words);
+    if (b.final === null) return true;
+    if (shown.has(b.final)) return false;
+    shown.add(b.final);
+    return true;
+  }).slice(0, NUM_SUGGESTIONS + 2);
+  const toSuggestions = () => uniqueSuggestions(branches.map(b => ({
+    text: b.final ?? firstWords(b.forced.slice(typed.length), words), prob: b.prob,
+  })));
+  onUpdate(toSuggestions());
+  const unfinished = branches.filter(b => b.final === null);
+  if (unfinished.length > 0) {
+    const extRes = await completions({ prompt: unfinished.map(b => prompt + b.forced), max_tokens: 2 * words, temperature: 0, logit_bias: logitBias }, signal);
+    for (const choice of extRes.choices) {
+      const b = unfinished[choice.index];
+      b.final = firstWords((b.forced + choice.text).slice(typed.length), words);
+    }
+  }
+  return { suggestions: toSuggestions(), warning, ctx: { prompt, typed, top: branches[0] ? branches[0].forced : null, logitBias } };
+}
+function spineBranches({ tokens, token_logprobs, top_logprobs }, typed, pathText, pathLogprob) {
+  const branches = [];
+  for (let j = 0; j < tokens.length; j++) {
+    for (const [tok, logprob] of Object.entries(top_logprobs[j])) {
+      const forced = pathText + tok;
+      if (isSpecialToken(tok) || !forced.startsWith(typed) || !forced.slice(typed.length).trim()) continue;
+      branches.push({ forced, prob: Math.exp(pathLogprob + logprob) });
+    }
+    pathText += tokens[j];
+    pathLogprob += token_logprobs[j];
+  }
+  return branches;
+}
+function boundaryWarning(baseIds, draftIds, base) {
+  if (baseIds.every((id, i) => id === draftIds[i])) return "";
+  return `Tokenization warning: the draft's tokens don't start with the tokens of ${JSON.stringify(base.slice(-20))}. Mid-word predictions may be off.`;
+}
+function completeWords(text, n) {
+  const match = text.match(new RegExp(`^\\s*\\S+(?:[ \\t]+\\S+){${n - 1}}(?=\\s)`));
+  return match ? match[0] : null;
+}
+function uniqueSuggestions(suggestions) {
+  return suggestions.filter((s, i) => s.text.trim() && suggestions.findIndex(t => t.text === s.text) === i).slice(0, NUM_SUGGESTIONS);
+}
+// Grey text: the top branch, extended greedily, cut at a sentence end or after ghostMax words.
+async function extendGhost(ctx, signal) {
+  if (!ctx.top) return "";
+  const res = await completions({ prompt: ctx.prompt + ctx.top, max_tokens: 2 * S.settings.ghostMax + 2, temperature: 0, logit_bias: ctx.logitBias }, signal);
+  let g = firstWords((ctx.top + res.choices[0].text).slice(ctx.typed.length), S.settings.ghostMax);
+  const nl = g.indexOf("\n"); if (nl > 0) g = g.slice(0, nl);
+  const m = g.match(/^[\s\S]*?[.!?](?=\s|$)/); if (m) g = m[0];
+  return g;
+}
+async function vllmSuggest(draft, signal, onEarly) {
+  const t0 = now(), partial = S.buffer.trim() !== "";
+  // When the draft already ends in a space, drop an option's own leading space, then merge duplicates.
+  const endsInSpace = /[ \t]$/.test(draft);
+  const fix = t => endsInSpace ? t.replace(/^[ \t]+/, "") : t;
+  const tidy = items => {
+    const out = [];
+    for (const o of items) { const text = fix(o.text); const dup = out.find(x => x.text === text); if (dup) dup.prob += o.prob; else if (text.trim() || text.includes("\n")) out.push({ text, prob: o.prob }); }
+    return out.sort((x, y) => y.prob - x.prob);
+  };
+  const pack = raw => { const items = tidy(raw); return { draft, items, H: entropyOf(items), ghost: partial && items[0] ? items[0].text : "", prefixMass: Math.min(1, items.reduce((a, o) => a + o.prob, 0)), ms: now() - t0 }; };
+  const r = await tokenSuggestions({ messages: messagesFor(draft), words: S.settings.words, onUpdate: items => onEarly(pack(items)) }, signal);
+  const out = pack(r.suggestions);
+  out.warning = r.warning;
+  if (!partial && out.items.length && out.H < S.settings.thr) out.ghost = fix(await extendGhost(r.ctx, signal));
+  out.ms = now() - t0;
+  return out;
+}
+async function vllmGenerate() {
+  const prefix = await chatPrefix(historyFor());
+  const res = await completions({ prompt: prefix.text + draftText(), max_tokens: 120, temperature: 0.8 });
+  return res.choices[0].text.replace(/\s+$/, "");
+}
+async function vllmNoteBits(notes, signal) {
+  const p = await turnPrefix(chatTurns(), "user");
+  return sumBits(await scoreSpan(p.text + REQUEST_HEAD, notes, signal));
+}
+// Chat replies — Simon. Uses DeepSeek through Open WebUI when config.js provides a key,
+// otherwise Qwen on the class server. The class server has no /v1/chat/completions route,
+// so the Qwen reply is generated like the predictions: the chat template (thinking off)
+// renders the messages, then /v1/completions writes the assistant turn.
+async function chatReply(messages) {
+  const t0 = now();
+  const cfg = (typeof window !== "undefined" && window.DEEPSEEK_CONFIG) || null;
+  let deepseekErr = "";
+  if (cfg && cfg.apiKey && cfg.apiKey !== "PASTE_YOUR_API_KEY_HERE") {
+    try {
+      const res = await fetch(cfg.url.replace(/\/+$/, "") + "/api/chat/completions", {
+        method: "POST", credentials: "omit",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + cfg.apiKey },
+        body: JSON.stringify({ model: cfg.model, messages, max_tokens: 800, temperature: 0.7, stream: false }),
+      });
+      if (!res.ok) throw new Error(`DeepSeek answered ${res.status}: ${(await res.text()).slice(0, 160)}`);
+      const text = await res.text();
+      // The Open WebUI endpoint returns an SSE stream even with stream:false: collect the content deltas.
+      let reply = "";
+      for (const line of text.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const obj = JSON.parse(payload);
+          const delta = (obj.choices && obj.choices[0] && obj.choices[0].delta) || {};
+          if (delta.content) reply += delta.content;
+        } catch (e) { /* skip malformed lines */ }
       }
-    }
-    return { items, unk: d.unk, H: d.H, ghost, ms: now() - t0 };
-  },
-  preview(n) { return demoGreedy([ctxNorms()[1], n], n, 2); },
-  scoreUnit(units, n) { return bitsOf(demoProb(demoDist(ctxNorms(units), S.nm), n)); },
-  generate() {
-    const out = []; let c = ctxNorms(), pv = lastNorm(), words = 0;
-    while (words < 45) {
-      const d = demoDist(c, S.nm);
-      const pool = d.items.slice(0, 40);
-      const w = pool.map(o => Math.pow(o.p, 1 / 0.85)); const z = w.reduce((a, b) => a + b, 0);
-      let r = Math.random() * z, pick = pool[0];
-      for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) { pick = pool[i]; break; } }
-      if (pick.n === PARA) { if (words > 12) break; else continue; }
-      out.push({ text: displayText(pick.n, pv), n: pick.n, p: pick.p });
-      if (isWordNorm(pick.n)) words++;
-      c = [c[1], pick.n]; pv = pick.n;
-      if (words > 30 && ENDERS.has(pick.n)) break;
-    }
-    return out;
-  },
-  noteBits(notes) {
-    let c = [PARA, PARA], b = 0;
-    for (const t of tok(notes)) { const n = normOf(t); b += bitsOf(demoProb(demoDist(c, null), n)); c = [c[1], n]; }
-    return b;
-  },
-};
+      if (!reply) throw new Error("DeepSeek returned an empty reply");
+      return { text: reply, ms: now() - t0, backend: "deepseek" };
+    } catch (e) { deepseekErr = friendlyErr(e); /* fall back to Qwen on the class server */ }
+  }
+  try {
+    const prefix = await chatPrefix(messages);
+    const j = await completions({ prompt: prefix.text, max_tokens: 800, temperature: 0.7 });
+    const text = ((j.choices && j.choices[0] && j.choices[0].text) || "").replace(/<\|im_end\|>[\s\S]*$/, "").trim();
+    if (!text) throw new Error("Qwen returned an empty reply");
+    return { text, ms: now() - t0, backend: "qwen" };
+  } catch (e) {
+    throw new Error((deepseekErr ? `DeepSeek failed (${deepseekErr}), then ` : "") + `Qwen failed: ${friendlyErr(e)}`);
+  }
+}
+async function vllmConnect() {
+  const res = await fetch(baseUrl() + "/v1/models", { credentials: "omit" });
+  if (!res.ok) throw new Error(`Listing models failed: HTTP ${res.status}`);
+  const ids = ((await res.json()).data || []).map(m => m.id);
+  $("vmodels").innerHTML = ids.map(id => `<option value="${esc(id)}"></option>`).join("");
+  return ids.find(id => /3\.8/.test(id)) || ids[0] || "";
+}
+
+/* ================= Bits for each piece of text ================= */
+// Model bits come from scoring the whole text; human bits depend on how each piece got in.
+// typed: all of its bits. chose / accepted / generated: the claim recorded when it was added
+// (choice + prefix bits, prefix bits, or 0), capped at the bits of everything added in that step.
+function applyHuman() {
+  const groups = new Map();
+  for (const u of S.units) {
+    if (u.src === "typed") { u.hbits = u.bits; continue; }
+    if (!groups.has(u.g)) groups.set(u.g, []);
+    groups.get(u.g).push(u);
+  }
+  for (const gg of groups.values()) {
+    const pending = gg.some(u => u.bits == null);
+    const total = gg.reduce((a, u) => a + (u.bits || 0), 0);
+    gg.forEach((u, i) => { u.hbits = pending ? null : i === 0 ? Math.min(gg[0].claim || 0, total) : 0; });
+  }
+}
+function assignBits(toks) {
+  let pos = 0;
+  const starts = S.units.map(u => { const s = pos; pos += u.text.length; return s; });
+  S.units.forEach(u => { u.bits = 0; });
+  let j = 0;
+  for (const t of toks) {
+    while (j + 1 < S.units.length && starts[j + 1] <= t.at) j++;
+    if (S.units[j]) S.units[j].bits += t.bits;
+  }
+  applyHuman();
+}
+/* ---- Splitting the bits by who supplied them ----
+   The model reads one long prompt: the chat turns, then the request with the plan, then the draft.
+   We score it in one pass and add up each token's bits by the part it falls in:
+     writer     the writer's chat messages               (human)   was <writer>
+     plan       the plan inside the request              (human)   was <notes>
+     draft      the text, credited word by word below    (human or AI, by how each word got in)
+     assistant  the AI's chat replies                    (AI)      was <assistant>
+     frame      chat-template markup and the fixed request wording (nobody; not counted)
+   Each part is scored given everything before it, so a reply that gives away an idea makes the
+   later draft cheaper: that information is counted once, in the reply, as AI bits. */
+function locateSegments(prefixText, msgs, notes) {
+  const segs = []; let cur = 0, ok = true;
+  const find = (str, kind, turn) => {
+    const t = str.trim(); if (!t) return;
+    const i = prefixText.indexOf(t, cur);
+    if (i < 0) { ok = false; return; }
+    segs.push({ kind, start: i, end: i + t.length, turn });
+    cur = i + t.length;
+  };
+  msgs.forEach((m, k) => {
+    if (k === msgs.length - 1) { if (notes) find(notes, "plan", k); }
+    else find(m.content, m.role === "user" ? "writer" : "assistant", k);
+  });
+  return { segs, ok };
+}
+let scoreTimer = null, scoreCtl = null;
+function scheduleScore() {
+  if (!S.connected) return;
+  clearTimeout(scoreTimer); if (scoreCtl) scoreCtl.abort();
+  scoreTimer = setTimeout(async () => {
+    const text = docText(), notes = S.notes.trim(), msgs = historyFor(), key = JSON.stringify(msgs);
+    if (!text && !notes && msgs.length < 2) { S.split = null; render(); return; }
+    const ctl = scoreCtl = new AbortController();
+    try {
+      const prefix = await chatPrefix(msgs);
+      const toks = await scoreSpan("", prefix.text + text, ctl.signal);
+      if (ctl.signal.aborted) return;
+      if (docText() !== text || JSON.stringify(historyFor()) !== key) { scheduleScore(); return; }
+      const { segs, ok } = locateSegments(prefix.text, msgs, notes);
+      const split = { writer: 0, assistant: 0, plan: 0, frame: 0, located: ok,
+        turns: msgs.slice(0, -1).map(m => ({ role: m.role, bits: 0, chars: m.content.length })) };
+      const draftToks = [], P = prefix.text.length;
+      for (const t of toks) {
+        if (t.at >= P) { draftToks.push({ at: t.at - P, bits: t.bits }); continue; }
+        const sg = segs.find(g => t.at >= g.start && t.at < g.end);
+        if (!sg) { split.frame += t.bits; continue; }
+        split[sg.kind] += t.bits;
+        if (sg.kind !== "plan") split.turns[sg.turn].bits += t.bits;
+      }
+      S.split = split; S.noteBits = split.plan;
+      S.warn = ok ? S.warn : "Couldn't find every chat message in the prompt, so some chat bits may be counted as template text.";
+      assignBits(draftToks); renderChat(); render();
+    } catch (e) { if (e.name !== "AbortError") { S.err = friendlyErr(e); render(); } }
+  }, 250);
+}
+
+/* ================= Plan value ================= */
+// Scores the whole current text twice: with the plan in the request and without.
+// saved = bits(text | no plan) - bits(text | plan); used = saved / bits(plan).
+async function measureNotes() {
+  const text = docText(), notes = S.notes.trim();
+  if (!text.trim()) throw new Error("Write some text first, then measure.");
+  if (!notes) throw new Error("Write your plan first, then measure.");
+  if (!S.connected) throw new Error("Not connected to the model server yet.");
+  const [pw, pn] = await Promise.all([chatPrefix(historyFor("")), chatPrefix(historyFor(notes))]);
+  const [tw, tn, nBits] = await Promise.all([scoreSpan(pw.text, text), scoreSpan(pn.text, text), vllmNoteBits(notes)]);
+  const without = sumBits(tw), withN = sumBits(tn);
+  const saved = without - withN;
+  const r = {
+    notesChars: notes.length, notesWords: (notes.match(/\S+/g) || []).length, words: stats().words,
+    without, with: withN, notesBits: nBits, saved, efficiency: nBits > 0 ? saved / nBits : 0,
+    overhead: nBits - saved, at: new Date().toISOString(),
+  };
+  S.notesHistory.push(r);
+  logEv("measureNotes", { notesWords: r.notesWords, saved: +saved.toFixed(2), notesBits: +nBits.toFixed(2) });
+  return r;
+}
 
 /* ================= Suggestion view ================= */
-function prefixState() {
-  const pre = S.buffer.trim();
-  return { has: pre.length > 0, pre: pre.toLowerCase() };
-}
-function matcher() {
-  const { pre } = prefixState();
-  if (isDemo()) return o => o.n.startsWith(pre);
-  const b = S.buffer.toLowerCase();
-  return o => o.text.toLowerCase().startsWith(b);
-}
 function view() {
   const s = S.sugg;
-  if (!s || S.mode !== "assist" || S.hidden) return { kind: "none", opts: [], ghost: [] };
-  const K = S.settings.k, ps = prefixState(), m = matcher();
-  const filtering = isDemo() ? ps.has : S.buffer.length > 0;
-  const pool = filtering ? s.items.filter(m) : s.items;
-  const opts = pool.slice(0, K);
-  let prefixMass = 1;
-  if (ps.has) prefixMass = Math.min(1, pool.reduce((a, o) => a + o.p, 0));
-  let ghost = s.ghost || [];
-  if (ghost.length && filtering && !m(ghost[0])) ghost = [];
-  const fork = !ps.has && s.H >= S.settings.thr;
-  return { kind: fork ? "fork" : ps.has ? "filter" : "ghost", opts, ghost, prefixMass, H: s.H, ms: s.ms };
+  if (!s || S.mode !== "assist" || S.hidden) return { kind: "none", opts: [], ghost: "", fresh: false };
+  const fresh = s.draft === draftText(), partial = S.buffer.trim() !== "";
+  const kind = partial ? "filter" : s.H >= S.settings.thr ? "fork" : "ghost";
+  return { kind, opts: s.items.slice(0, S.settings.k), ghost: fresh && kind !== "fork" ? (s.ghost || "") : "", fresh, H: s.H, ms: s.ms, prefixMass: s.prefixMass };
 }
 
 /* ================= Edits ================= */
+let groupSeq = 0;
 function pushUnit(u) {
   u.t = Math.round(now());
   if (u.n === undefined) u.n = normOf(u.text);
   S.units.push(u);
 }
 function commitTyped(text) {
-  const units = S.units.slice();
-  const u = { text, src: "typed", keys: S.pendingKeys, bits: null, hbits: null };
+  pushUnit({ text, src: "typed", keys: S.pendingKeys, bits: null, hbits: null });
   S.pendingKeys = 0;
-  pushUnit(u);
-  if (isDemo()) { u.bits = u.hbits = DEMO.scoreUnit(units, u.n); }
-  else {
-    VLLM.score(promptText(units), text).then(b => { u.bits = u.hbits = b; render(); }).catch(e => { S.err = e.message; render(); });
-  }
   logEv("type", { text });
+}
+// Adds text that came from a suggestion or from generation, one unit per word.
+function commitChunk(text, src, claim, extra) {
+  const g = ++groupSeq;
+  pieces(text).forEach((p, i) => pushUnit(Object.assign({ text: p, src, g, claim: i === 0 ? claim : 0, keys: i === 0 ? S.pendingKeys : 0, bits: null, hbits: null }, i === 0 ? extra : {})));
+  S.pendingKeys = 0;
 }
 function typeChar(c) {
   if (c === "\r") return;
@@ -724,102 +869,89 @@ function typeChar(c) {
 }
 function afterChange(structural) {
   S.hidden = false;
-  if (structural) refresh(); else render();
+  if (structural) scheduleScore();
+  refresh();
 }
 function pick(i) {
-  const v = view(); const o = v.opts[i]; if (!o) return false;
-  const shown = v.opts.reduce((a, x) => a + x.p, 0);
-  const ps = prefixState();
-  const pBits = ps.has ? bitsOf(Math.max(v.prefixMass, o.p)) : 0;
-  const prev = lastNorm();
-  const text = isDemo() ? displayText(o.n, prev) : o.text;
-  pushUnit({
-    text, n: isDemo() ? o.n : undefined, src: "chose", keys: S.pendingKeys, bits: bitsOf(o.p),
-    hbits: pBits + bitsOf(o.p / shown), H: v.H, choice: i, prefix: ps.has ? S.buffer.trim() : "",
-    opts: v.opts.map(x => ({ text: x.text, p: +x.p.toFixed(6) })),
+  const v = view(); const o = v.opts[i]; if (!o || !v.fresh) return false;
+  const shown = v.opts.reduce((a, x) => a + (x.prob || 0), 0) || 1;
+  const partial = S.buffer.trim() !== "";
+  const prefixBits = partial ? bitsOf(Math.min(1, Math.max(v.prefixMass || shown, o.prob))) : 0;
+  const prefix = partial ? S.buffer.trim() : "";
+  const text = S.buffer + o.text; S.buffer = "";
+  commitChunk(text, "chose", prefixBits + bitsOf(o.prob / shown), {
+    choice: i, H: v.H, prefix, opts: v.opts.map(x => ({ text: x.text, p: +(x.prob || 0).toFixed(6) })),
   });
-  S.pendingKeys = 0; S.buffer = "";
-  logEv("pick", { i, text });
+  logEv("pick", { i, text: o.text });
   afterChange(true);
   return true;
 }
-function acceptGhost(count) {
-  const v = view(); const g = v.ghost; if (!g.length) return false;
-  const n = Math.min(count, g.length), ps = prefixState();
-  for (let i = 0; i < n; i++) {
-    const o = g[i];
-    const text = isDemo() ? displayText(o.n, lastNorm()) : o.text;
-    pushUnit({
-      text, n: isDemo() ? o.n : undefined, src: "accepted", keys: i === 0 ? S.pendingKeys : 0, bits: bitsOf(o.p),
-      hbits: i === 0 && ps.has ? bitsOf(Math.max(v.prefixMass, o.p)) : 0, prefix: i === 0 && ps.has ? S.buffer.trim() : "",
-    });
-    if (i === 0) { S.pendingKeys = 0; S.buffer = ""; }
-  }
-  logEv("accept", { n });
-  if (!isDemo() && S.sugg && S.sugg.pos) S.sugg = suggFromPositions(S.sugg.pos.slice(n), S.sugg.ms);
+function acceptGhost(all) {
+  const v = view(); if (!v.ghost) return false;
+  const chunk = all ? v.ghost : firstWords(v.ghost, 1);
+  const partial = S.buffer.trim() !== "";
+  const prefix = partial ? S.buffer.trim() : "";
+  const text = S.buffer + chunk; S.buffer = "";
+  commitChunk(text, "accepted", partial ? bitsOf(Math.min(1, v.prefixMass || 1)) : 0, prefix ? { prefix } : {});
+  // Keep showing the rest of the grey text until new suggestions arrive.
+  const rest = v.ghost.slice(chunk.length);
+  if (S.sugg) S.sugg = Object.assign({}, S.sugg, { draft: draftText(), items: [], ghost: rest, H: 0 });
+  logEv("accept", { text: chunk });
   afterChange(true);
-  return true;
-}
-function deleteSelection() {
-  const sel = getSelection();
-  if (!sel || sel.isCollapsed) return false;
-  const doc = $("doc");
-  if (!doc.contains(sel.anchorNode) || !doc.contains(sel.focusNode)) return false;
-  // Collect the indices of selected units (including partially covered units)
-  const idx = new Set();
-  const range = sel.getRangeAt(0);
-  const walk = node => {
-    if (node.nodeType === 1 && node.classList && node.classList.contains("u")) {
-      const i = +node.dataset.i;
-      if (Number.isFinite(i)) idx.add(i);
-      return;
-    }
-    for (const c of node.childNodes) walk(c);
-  };
-  walk(range.commonAncestorContainer);
-  if (!idx.size) return false;
-  const sorted = [...idx].sort((a, b) => b - a);
-  for (const i of sorted) {
-    const u = S.units[i];
-    if (u) logEv("delete", { text: u.text, src: u.src });
-  }
-  S.units = S.units.filter((_, i) => !idx.has(i));
-  sel.removeAllRanges();
   return true;
 }
 function backspace() {
   if (S.buffer.length) { S.buffer = S.buffer.slice(0, -1); return false; }
   const u = S.units.pop(); if (!u) return false;
   logEv("delete", { text: u.text, src: u.src });
-  if (u.text.trim().length > 1) S.buffer = u.text.slice(0, -1);
-  else if (u.text.trim().length === 1 && /[A-Za-z0-9]/.test(u.text.trim())) S.buffer = u.text.slice(0, -1);
+  S.buffer = u.text.length > 1 && u.text !== "\n" ? u.text.slice(0, -1) : "";
+  return true;
+}
+
+// Deletes the words covered by a mouse selection in the draft — Simon.
+function deleteSelection() {
+  const sel = getSelection();
+  if (!sel || sel.isCollapsed) return false;
+  const doc = $("doc");
+  if (!doc.contains(sel.anchorNode) || !doc.contains(sel.focusNode)) return false;
+  const idx = new Set();
+  const range = sel.getRangeAt(0);
+  for (const el of doc.querySelectorAll(".u")) {
+    if (range.intersectsNode(el)) { const i = +el.dataset.i; if (Number.isFinite(i)) idx.add(i); }
+  }
+  if (!idx.size) return false;
+  for (const i of [...idx].sort((a, b) => b - a)) { const u = S.units[i]; if (u) logEv("delete", { text: u.text, src: u.src }); }
+  S.units = S.units.filter((_, i) => !idx.has(i));
+  sel.removeAllRanges();
   return true;
 }
 
 /* ================= Async refresh ================= */
-let refreshTimer = null;
+let suggTimer = null, suggCtl = null;
 function refresh() {
-  render();
   if (S.mode !== "assist") { S.sugg = null; render(); return; }
-  const id = ++S.reqId;
-  if (isDemo()) { S.sugg = DEMO.suggest(); S.err = null; render(); return; }
-  const run = () => {
-    VLLM.suggest().then(r => { if (id === S.reqId) { S.sugg = r; S.err = null; render(); } })
-     .catch(e => { if (id === S.reqId) { S.err = friendlyErr(e); S.sugg = null; render(); } });
-  };
-  if (!promptText()) { S.sugg = null; render(); return; }
-  clearTimeout(refreshTimer); refreshTimer = setTimeout(run, 40);
+  render();
+  if (!S.connected) return;
+  clearTimeout(suggTimer); if (suggCtl) suggCtl.abort();
+  const draft = draftText();
+  suggTimer = setTimeout(async () => {
+    const ctl = suggCtl = new AbortController();
+    try {
+      const r = await vllmSuggest(draft, ctl.signal, early => { if (!ctl.signal.aborted) { S.sugg = early; render(); } });
+      if (ctl.signal.aborted) return;
+      S.sugg = r; S.err = null; S.warn = r.warning || ""; render();
+    } catch (e) { if (e.name === "AbortError") return; S.err = friendlyErr(e); render(); }
+  }, 120);
 }
 function friendlyErr(e) {
   const m = String(e && e.message || e);
-  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return `Can't reach the model server at ${S.settings.url}. Check the address and your internet connection. If it's your own vLLM server, start it with --allowed-origins '["*"]'.`;
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return `Can't reach the model server at ${S.settings.url}. Check the address and your internet connection.`;
   return m;
 }
 function updateNotes() {
-  S.nm = notesMap(S.notes); MODEL.cache.clear();
+  // Plan bits, chat bits and draft bits all come from one scoring pass (scheduleScore).
   if (!S.notes.trim()) S.noteBits = 0;
-  else if (isDemo()) S.noteBits = DEMO.noteBits(S.notes);
-  else VLLM.score("", S.notes.trim()).then(b => { S.noteBits = b; render(); }).catch(() => {});
+  scheduleScore();
 }
 
 /* ================= Stats ================= */
@@ -828,17 +960,21 @@ function stats() {
   const by = { typed: 0, chose: 0, accepted: 0, generated: 0 };
   let choices = 0;
   for (const u of S.units) {
-    if (u.bits == null) { pending++; continue; }
+    if (u.choice !== undefined) choices++;
+    if (u.bits == null || u.hbits == null) { if (isVisibleUnit(u)) pending++; continue; }
     total += u.bits; human += u.hbits;
     by[u.src] += u.hbits;
-    if (u.src === "chose") choices++;
   }
   const words = (docText().match(/[A-Za-z0-9][A-Za-z0-9'’-]*/g) || []).length;
   const secs = S.startT !== null && S.lastT !== null ? (S.lastT - S.startT) / 1000 : 0;
   const nb = S.noteBits || 0;
   const control = total + nb > 0 ? (human + nb) / (total + nb) : 0;
+  const sp = S.split || { writer: 0, assistant: 0, frame: 0 };
+  const allHuman = human + nb + sp.writer, allBits = total + nb + sp.writer + sp.assistant;
+  const controlAll = allBits > 0 ? allHuman / allBits : 0;
   return {
-    total, human, noteBits: nb, control, by, choices, words, secs, pending,
+    total, human, noteBits: nb, control, chatWriter: sp.writer, chatAssistant: sp.assistant, frame: sp.frame || 0,
+    allHuman, allBits, controlAll, by, choices, words, secs, pending,
     keystrokes: S.keystrokes, perKey: S.keystrokes ? human / S.keystrokes : 0,
     wpm: secs > 2 ? words / (secs / 60) : 0,
   };
@@ -849,20 +985,10 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmt = (x, d = 1) => Number.isFinite(x) ? x.toFixed(d) : "–";
 
-function ghostText(v) {
-  if (!v.ghost.length) return "";
-  const g = v.ghost; let first;
-  if (isDemo()) {
-    const pre = S.buffer.trim();
-    if (pre) first = g[0].n.slice(pre.length);
-    else first = S.buffer === " " ? g[0].text.replace(/^ /, "") : g[0].text;
-  } else first = g[0].text.slice(S.buffer.length);
-  return first + g.slice(1).map(x => x.text).join("");
-}
 function renderDoc(v) {
   const parts = S.units.map((u, i) => `<span class="u ${u.src}" data-i="${i}">${esc(u.text)}</span>`);
-  if (!S.units.length && !S.buffer) parts.push(`<span class="placeholder">${S.mode === "generate" ? "Write a prompt in the Thinking Box, then generate. " : "Click here and start typing. "}</span>`);
-  parts.push(`<span class="buf">${esc(S.buffer)}</span><span class="caret"></span><span class="ghost">${esc(ghostText(v))}</span>`);
+  if (!S.units.length && !S.buffer) parts.push(`<span class="placeholder">${S.mode === "generate" ? "Write your plan, then generate. " : "Click here and start typing. "}</span>`);
+  parts.push(`<span class="buf">${esc(S.buffer)}</span><span class="caret"></span><span class="ghost">${esc(v.ghost)}</span>`);
   $("doc").innerHTML = parts.join("");
   $("app").classList.toggle("show-src", S.settings.showSrc);
 }
@@ -870,38 +996,64 @@ function renderStatus(v) {
   const bits = [];
   if (S.err) bits.push(`<span class="pill err">${esc(S.err)}</span>`);
   if (S.mode === "assist" && S.sugg && !S.hidden) {
-    if (v.kind === "fork") bits.push(`<span class="pill fork">Your call: ${fmt(v.H)} bits of uncertainty</span>`);
+    if (!v.fresh) bits.push(`<span class="pill">Updating…</span>`);
+    else if (v.kind === "fork") bits.push(`<span class="pill fork">Your call: ${fmt(v.H)} bits of uncertainty</span>`);
     else if (v.kind === "ghost") bits.push(`<span class="pill">Model is confident: ${fmt(v.H)} bits</span>`);
-    else bits.push(`<span class="pill">Filtering by “${esc(S.buffer.trim())}”</span>`);
+    else bits.push(`<span class="pill">Completing “${esc(S.buffer.trim())}”</span>`);
     bits.push(`<span>Choices appear at ≥ <span class="mono">${fmt(S.settings.thr)}</span> bits</span>`);
-  } else if (S.mode === "assist" && S.hidden) bits.push(`<span>Suggestions hidden until the next word</span>`);
+  } else if (S.mode === "assist" && S.hidden) bits.push(`<span>Suggestions hidden until you type again</span>`);
   else if (S.mode === "plain") bits.push(`<span>Plain typing: no suggestions. Every word is still scored.</span>`);
-  bits.push(`<span>${isDemo() ? "Demo model" : esc(S.settings.model || "vLLM")}${S.sugg && S.sugg.ms != null ? ` · <span class="mono">${Math.round(S.sugg.ms)} ms</span>` : ""}</span>`);
+  bits.push(`<span>${S.connected ? esc(S.settings.model) : "Not connected"}${S.sugg && S.sugg.ms != null ? ` · <span class="mono">${Math.round(S.sugg.ms)} ms</span>` : ""}</span>`);
+  if (S.warn) bits.push(`<span class="pill err">${esc(S.warn)}</span>`);
   $("status").innerHTML = bits.join("");
 }
-function pickLabel(i) { return S.settings.pickKeys === "alt" ? `Alt+${i + 1}` : `${i + 1}`; }
+function pickLabel(i) { return S.settings.pickKeys === "alt" ? `${ALT}${i + 1}` : `${i + 1}`; }
 function renderSlots(v) {
   const el = $("slots");
   const show = S.mode === "assist";
   el.hidden = !show; $("keys").hidden = !show;
   $("genRow").hidden = S.mode !== "generate";
   if (!show) return;
-  el.className = "slots " + (v.kind === "fork" ? "fork" : v.kind === "ghost" ? "quiet" : "");
-  const K = S.settings.k, shown = v.opts.reduce((a, o) => a + o.p, 0) || 1, html = [];
-  for (let i = 0; i < 4; i++) {
+  const K = S.settings.k;
+  el.style.setProperty("--k", K);
+  el.className = "slots " + (v.kind === "fork" ? "fork" : v.kind === "ghost" ? "quiet" : "") + (v.fresh ? "" : " stale");
+  const shown = v.opts.reduce((a, o) => a + (o.prob || 0), 0) || 1, html = [];
+  for (let i = 0; i < K; i++) {
     const o = v.opts[i];
-    if (!o || i >= K) { html.push(`<button class="slot empty" type="button" tabindex="-1" aria-hidden="true"><span class="k">&nbsp;</span><span class="w">&nbsp;</span></button>`); continue; }
-    const pv = isDemo() ? DEMO.preview(o.n) : "";
-    const share = o.p / shown;
-    const word = (isDemo() ? displayText(o.n, lastNorm()) : o.text).replace(/^\s+/, "").replace(/\n/g, "↵");
-    html.push(`<button class="slot" type="button" data-pick="${i}" title="p = ${o.p.toExponential(2)} · ${fmt(bitsOf(o.p))} bits from the model">
-      <span class="k"><span>${pickLabel(i)}</span><span>${Math.round(share * 100)}%</span></span>
-      <span class="w">${esc(word)}<span class="pv">${esc(pv)}</span></span>
+    if (!o) { html.push(`<button class="slot empty" type="button" tabindex="-1" aria-hidden="true"><span class="k">&nbsp;</span><span class="w">&nbsp;</span></button>`); continue; }
+    const raw = o.text;
+    const word = raw.trim() ? raw.replace(/^[ \t]+/, "").replace(/\n/g, "↵") : (raw.includes("\n") ? "↵ new line" : "␣ space");
+    const share = (o.prob || 0) / shown, pct = o.prob < 0.005 ? "<1%" : `${Math.round(o.prob * 100)}%`;
+    html.push(`<button class="slot" type="button" data-pick="${i}" ${v.fresh ? "" : "disabled"} title="${esc(raw)} · p = ${(o.prob || 0).toExponential(2)} · ${fmt(bitsOf(o.prob || 1e-12))} bits from the model">
+      <span class="k"><span>${pickLabel(i)}</span><span>${pct}</span></span>
+      <span class="w">${esc(word)}</span>
       <span class="pb"><i style="width:${Math.max(3, share * 100).toFixed(1)}%"></i></span>
     </button>`);
   }
   el.innerHTML = html.join("");
-  $("pickKeyLabel").innerHTML = S.settings.pickKeys === "alt" ? "<kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>4</kbd>" : "<kbd>1</kbd>–<kbd>4</kbd> at a fork";
+  $("pickKeyLabel").innerHTML = S.settings.pickKeys === "alt" ? `<kbd>${IS_MAC ? "⌥" : "Alt"}</kbd>+<kbd>1</kbd>–<kbd>${K}</kbd>` : `<kbd>1</kbd>–<kbd>${K}</kbd> at a fork`;
+}
+// Bits by part: who supplied each part of what the model read.
+function renderSplit(st) {
+  const el = $("splitBox");
+  if (!S.split && !st.total) { el.innerHTML = ""; return; }
+  const draftAI = Math.max(0, st.total - st.human);
+  const rows = [
+    ["Your chat messages", "you", st.chatWriter, "var(--typed)"],
+    ["Your plan", "you", st.noteBits, "var(--steer)"],
+    ["Your words in the text", "you", st.human, "var(--chose)"],
+    ["AI words in the text", "AI", draftAI, "var(--ai)"],
+    ["AI chat replies", "AI", st.chatAssistant, "var(--gen)"],
+  ];
+  const T = rows.reduce((a, r) => a + r[2], 0) || 1;
+  el.innerHTML = `<div class="split">
+    <h2>Bits by part</h2>
+    <div class="stack" aria-hidden="true">${rows.map(r => `<span style="width:${(100 * r[2] / T).toFixed(2)}%;background:${r[3]}"></span>`).join("")}</div>
+    <table><thead><tr><th>Part</th><th>Who</th><th>Bits</th><th>Share</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td><i class="sw" style="background:${r[3]}"></i>${r[0]}</td><td>${r[1]}</td><td>${fmt(r[2])}</td><td>${Math.round(100 * r[2] / T)}%</td></tr>`).join("")}
+    </tbody></table>
+    <p class="hint">You: <b class="mono">${fmt(st.allHuman)}</b> bits · AI: <b class="mono">${fmt(st.allBits - st.allHuman)}</b> bits. Template text and the fixed request wording (${fmt(st.frame)} bits) aren't counted.</p>
+  </div>`;
 }
 function renderStats() {
   const st = stats();
@@ -909,13 +1061,14 @@ function renderStats() {
   const T = st.total + st.noteBits || 1;
   const model = Math.max(0, st.total - st.human);
   $("stack").innerHTML = [
-    ["var(--typed)", st.by.typed], ["var(--chose)", st.by.chose], ["var(--steer)", st.noteBits], ["var(--ai)", model],
+    ["var(--typed)", st.by.typed], ["var(--chose)", st.by.chose + st.by.accepted], ["var(--steer)", st.noteBits], ["var(--ai)", model],
   ].map(([c, x]) => `<span style="width:${(100 * x / T).toFixed(2)}%;background:${c}"></span>`).join("");
   $("kv").innerHTML = `
     <dt>All bits in the text</dt><dd>${fmt(st.total)}</dd>
-    <dt>Your bits</dt><dd>${fmt(st.human)}</dd>
-    <dt>Steering bits (Thinking Box)</dt><dd>${fmt(st.noteBits)}</dd>
-    <dt>Human share without steering</dt><dd>${st.total ? Math.round(100 * st.human / st.total) + "%" : "–"}</dd>
+    <dt>Your bits in the text</dt><dd>${fmt(st.human)}</dd>
+    <dt>Plan bits (your request)</dt><dd>${fmt(st.noteBits)}</dd>
+    <dt>Human share without the plan</dt><dd>${st.total ? Math.round(100 * st.human / st.total) + "%" : "–"}</dd>
+    <dt>Human share including the chat</dt><dd>${st.allBits ? Math.round(100 * st.controlAll) + "%" : "–"}</dd>
     <div class="sep"></div>
     <dt>Keystrokes</dt><dd>${st.keystrokes}</dd>
     <dt>Your bits per keystroke</dt><dd>${fmt(st.perKey, 2)}</dd>
@@ -923,13 +1076,14 @@ function renderStats() {
     <dt>Words</dt><dd>${st.words}</dd>
     <dt>Words per minute</dt><dd>${st.wpm ? fmt(st.wpm, 0) : "–"}</dd>
     ${st.pending ? `<dt>Words still being scored</dt><dd>${st.pending}</dd>` : ""}`;
+  renderSplit(st);
 }
 const STRIP_MAX = 20, STRIP_H = 96;
 function renderStrip() {
   const el = $("strip");
-  const cols = S.units.filter(u => u.text.trim() || u.text === "\n").map(u => {
+  const cols = S.units.filter(isVisibleUnit).map(u => {
     const label = u.text === "\n" ? "¶" : u.text.trim();
-    if (u.bits == null) return `<div class="col ${u.src}" title="“${esc(label)}” · scoring…"><div class="bar pending" style="height:8px"></div><div class="lbl">${esc(label)}</div></div>`;
+    if (u.bits == null || u.hbits == null) return `<div class="col ${u.src}" title="“${esc(label)}” · scoring…"><div class="bar pending" style="height:8px"></div><div class="lbl">${esc(label)}</div></div>`;
     const h = Math.min(u.bits, STRIP_MAX) / STRIP_MAX * STRIP_H;
     const hh = Math.min(u.hbits, u.bits, STRIP_MAX) / STRIP_MAX * STRIP_H;
     const srcName = { typed: "typed", chose: "chosen from options", accepted: "accepted grey text", generated: "generated" }[u.src];
@@ -942,28 +1096,55 @@ function renderStrip() {
 function sessionLog() {
   const st = stats();
   return {
-    app: "thoughtful-writing-bit-meter", version: 1, example: S.example,
-    condition: S.mode, backend: S.settings.backend, model: isDemo() ? "demo-trigram" : S.settings.model, url: isDemo() ? null : S.settings.url,
-    settings: { thr: S.settings.thr, ghostMax: S.settings.ghostMax, k: S.settings.k, pickKeys: S.settings.pickKeys },
+    app: "thoughtful-writing-bit-meter", version: 2, engine: "writing-prototypes tokens engine (Nov 2026)",
+    condition: S.mode, model: S.settings.model, url: S.settings.url,
+    settings: { thr: S.settings.thr, ghostMax: S.settings.ghostMax, k: S.settings.k, words: S.settings.words, pickKeys: S.settings.pickKeys },
     startedAt: S.startedAt, exportedAt: new Date().toISOString(),
-    notes: S.notes, promptHeader: promptHeader(), noteBits: +st.noteBits.toFixed(3),
+    notes: S.notes, chat: chatTurns(), baseRequest: BASE_REQUEST, requestHead: REQUEST_HEAD, messages: historyFor(),
+    noteBits: +st.noteBits.toFixed(3), notesMeasurements: S.notesHistory, split: S.split,
     summary: {
       totalBits: +st.total.toFixed(3), humanBits: +st.human.toFixed(3), control: +st.control.toFixed(4), controlNoSteering: st.total ? +(st.human / st.total).toFixed(4) : 0,
+      controlWithChat: +st.controlAll.toFixed(4), chatWriterBits: +st.chatWriter.toFixed(3), chatAssistantBits: +st.chatAssistant.toFixed(3), frameBits: +st.frame.toFixed(3),
       keystrokes: st.keystrokes, humanBitsPerKeystroke: +st.perKey.toFixed(4), words: st.words,
       seconds: +st.secs.toFixed(1), wpm: +st.wpm.toFixed(1), choices: st.choices,
     },
     text: docText(),
     units: S.units.map(u => Object.assign({ text: u.text, src: u.src, bits: u.bits == null ? null : +u.bits.toFixed(4), hbits: u.hbits == null ? null : +u.hbits.toFixed(4), keys: u.keys, t: u.t },
+      u.g != null ? { group: u.g, claim: +(u.claim || 0).toFixed(4) } : {},
       u.opts ? { opts: u.opts, choice: u.choice, H: +u.H.toFixed(3) } : {}, u.prefix ? { prefix: u.prefix } : {})),
     events: S.events,
   };
 }
 function renderLog() { if ($("logPanel").open) $("logPre").textContent = JSON.stringify(sessionLog(), null, 2); }
 
+function renderNotesValue() {
+  const el = $("notesValue");
+  $("measureBtn").disabled = S.measuring;
+  $("measureBtn").textContent = S.measuring ? "Measuring…" : "Measure what the plan saved";
+  if (S.measureErr) { el.innerHTML = `<p class="hint" style="color:var(--gen)">${esc(S.measureErr)}</p>`; return; }
+  const h = S.notesHistory; if (!h.length) { el.innerHTML = ""; return; }
+  const r = h[h.length - 1];
+  const M = Math.max(r.without, r.with + Math.max(0, r.notesBits), 1);
+  const pct = x => (100 * Math.max(0, x) / M).toFixed(1) + "%";
+  const eff = Math.round(100 * r.efficiency);
+  const verdict = r.saved <= 0 ? "The plan did not make the text more predictable. It may be off-topic for what you wrote."
+    : r.efficiency >= 0.5 ? `Efficient: ${eff}% of the plan's information showed up in the text.`
+    : r.efficiency >= 0.2 ? `Partly used: ${eff}% of the plan's information showed up in the text.`
+    : `Mostly unused: only ${eff}% of the plan's information showed up in the text.`;
+  const rows = h.slice(-6).map(x => `<tr><td>${x.notesWords}</td><td>${fmt(x.notesBits)}</td><td>${fmt(x.saved)}</td><td>${Math.round(100 * x.efficiency)}%</td></tr>`).join("");
+  el.innerHTML = `<div class="nv">
+    <div class="bars">
+      <span>Text, no plan</span><div class="track"><i style="width:${pct(r.without)};background:var(--ai)"></i></div><b>${fmt(r.without)}</b>
+      <span>Text + plan</span><div class="track"><i style="width:${pct(r.with)};background:var(--ai)"></i><i style="width:${pct(r.notesBits)};background:var(--steer)"></i></div><b>${fmt(r.with + r.notesBits)}</b>
+    </div>
+    <p class="verdict">The plan cost <b class="mono">${fmt(r.notesBits)}</b> bits and saved <b class="mono">${fmt(r.saved)}</b> bits in the text. ${verdict}</p>
+    ${h.length > 1 ? `<div class="tbl-wrap"><table><thead><tr><th>Plan words</th><th>Plan bits</th><th>Saved</th><th>Used</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+  </div>`;
+}
 function render() {
   const v = view();
-  renderDoc(v); renderStatus(v); renderSlots(v); renderStats(); renderStrip(); renderLog();
-  $("exampleNote").hidden = !S.example;
+  renderDoc(v); renderStatus(v); renderSlots(v); renderStats(); renderStrip(); renderNotesValue(); renderLog();
+  renderConn();
 }
 
 /* ================= Input handling ================= */
@@ -974,9 +1155,9 @@ function onKeyDown(e) {
   if (e.key === "Tab") {
     e.preventDefault(); markKey();
     if (S.mode !== "assist") { S.pendingKeys--; S.keystrokes--; return; }
-    if (e.shiftKey) { if (!acceptGhost(99)) flash(); return; }
-    if (acceptGhost(1)) return;
-    if (v.kind === "filter" && v.opts.length) { pick(0); return; }
+    if (e.shiftKey) { if (!acceptGhost(true)) { S.keystrokes--; S.pendingKeys--; flash(); } return; }
+    if (acceptGhost(false)) return;
+    if (v.kind === "filter" && v.opts.length && pick(0)) return;
     S.keystrokes--; S.pendingKeys--; flash();
     return;
   }
@@ -986,11 +1167,11 @@ function onKeyDown(e) {
     const structural = deleteSelection() || backspace(); afterChange(structural); return;
   }
   if (e.key === "Enter") { e.preventDefault(); markKey(); typeChar("\n"); afterChange(true); return; }
-  const digit = /^Digit([1-4])$/.exec(e.code);
-  if (digit && S.mode === "assist") {
+  const digit = /^Digit([1-9])$/.exec(e.code);
+  if (digit && S.mode === "assist" && +digit[1] <= S.settings.k) {
     const i = +digit[1] - 1;
     const altMode = S.settings.pickKeys === "alt";
-    const ok = altMode ? e.altKey : (!e.altKey && !e.ctrlKey && !e.metaKey && v.kind === "fork");
+    const ok = altMode ? (e.altKey && !e.ctrlKey && !e.metaKey) : (!e.altKey && !e.ctrlKey && !e.metaKey && v.kind === "fork");
     if (ok) { e.preventDefault(); markKey(); if (!pick(i)) { S.keystrokes--; S.pendingKeys--; } return; }
   }
 }
@@ -1008,47 +1189,17 @@ function onInput() {
     typeChar(ch);
     if (S.units.length !== before) structural = true;
   }
-  if (S.example) S.example = false;
   afterChange(structural);
 }
 
 /* ================= Session control ================= */
 function resetSession() {
-  Object.assign(S, { units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [], startT: null, lastT: null, startedAt: new Date().toISOString(), sugg: null, hidden: false, err: null, example: false, chat: [] });
-  logEv("start", { condition: S.mode });
+  Object.assign(S, { units: [], buffer: "", pendingKeys: 0, keystrokes: 0, events: [], startT: null, lastT: null, startedAt: new Date().toISOString(), sugg: null, hidden: false, err: null, warn: "", notesHistory: [], measureErr: null, chat: [], split: null });
   renderChat();
+  updateNotes();
+  logEv("start", { condition: S.mode });
   refresh();
 }
-function simulateExample() {
-  S.notes = EXAMPLE_NOTES; $("notes").value = S.notes; updateNotes();
-  Object.assign(S, { units: [], buffer: "", keystrokes: 0, pendingKeys: 0, events: [] });
-  let clock = 0;
-  const step = ms => { clock += ms; };
-  for (const raw of tok(EXAMPLE_TEXT)) {
-    const n = normOf(raw);
-    S.sugg = DEMO.suggest();
-    const v = view();
-    let done = false;
-    if (isWordNorm(n)) {
-      if (v.ghost.length && v.ghost[0].n === n) { S.keystrokes++; S.pendingKeys++; step(450); done = acceptGhost(1); }
-      else {
-        const i = v.opts.findIndex(o => o.n === n);
-        if (i >= 0 && v.kind === "fork") { S.keystrokes++; S.pendingKeys++; step(1400); done = pick(i); }
-      }
-    }
-    if (!done) {
-      const word = raw.replace(/^[ \t]+/, "");
-      const space = /^[ \t]/.test(raw) ? 1 : 0;
-      S.keystrokes += word.length + space; S.pendingKeys += word.length + space; step(220 * (word.length + space));
-      commitTyped(S.units.length && /^[ \t]/.test(raw) ? " " + word : word);
-    }
-    S.units[S.units.length - 1].t = clock;
-  }
-  S.startT = 0; S.lastT = clock; S.example = true; S.buffer = " ";
-  S.events = [{ t: 0, e: "example" }];
-  refresh();
-}
-
 /* ================= Chat ================= */
 function setChatOpen(open) {
   S.chatOpen = open;
@@ -1058,14 +1209,14 @@ function setChatOpen(open) {
 }
 function renderChat() {
   const log = $("chatLog");
+  const turns = S.split ? S.split.turns : [];
+  let k = 0;  // index among the turns the model reads (no placeholders or errors)
   log.innerHTML = S.chat.map(m => {
-    if (m.thinking) {
-      return `<div class="chat-msg assistant thinking"><span>Thinking</span><span class="dots"><i></i><i></i><i></i></span></div>`;
-    }
-    if (m.error) {
-      return `<div class="chat-msg error">${esc(m.content)}<br><button class="retry" type="button" data-retry="${esc(m.retryText || "")}">↻ Retry</button></div>`;
-    }
-    return `<div class="chat-msg ${m.role}">${esc(m.content)}</div>`;
+    if (m.thinking) return `<div class="chat-msg assistant thinking"><span>Thinking</span><span class="dots"><i></i><i></i><i></i></span></div>`;
+    if (m.error) return `<div class="chat-msg error">${esc(m.content)}<br><button class="retry" type="button" data-retry="${esc(m.retryText || "")}">↻ Retry</button></div>`;
+    const t = m.content ? turns[k++] : null;
+    const tag = t && t.role === m.role ? `<span class="bits">${fmt(t.bits)} bits · ${m.role === "user" ? "yours" : "AI"}</span>` : "";
+    return `<div class="chat-msg ${m.role}">${esc(m.content)}${tag}</div>`;
   }).join("");
   log.scrollTop = log.scrollHeight;
 }
@@ -1073,86 +1224,74 @@ async function sendChat() {
   const box = $("chatBox");
   const text = box.value.trim();
   if (!text) return;
-  if (isDemo()) {
-    S.chat.push({ role: "user", content: text });
-    S.chat.push({ role: "assistant", content: "The demo model can't chat. Switch to the vLLM backend (Settings → Connect) or configure config.js to talk to the model." });
-    box.value = ""; renderChat(); return;
-  }
   S.chat.push({ role: "user", content: text });
   box.value = ""; renderChat();
   const btn = $("chatForm").querySelector("button"); btn.disabled = true;
-  // Show the "thinking" indicator
   const thinkingIdx = S.chat.length;
   S.chat.push({ role: "assistant", content: "", thinking: true });
   renderChat();
   try {
-    const draft = docText().trim();
-    const notes = S.notes.trim();
+    const draft = docText().trim(), notes = S.notes.trim();
     const contextParts = [];
-    if (notes) contextParts.push(`Thinking Box notes:\n${notes}`);
+    if (notes) contextParts.push(`The writer's plan:\n${notes}`);
     if (draft) contextParts.push(`Current draft:\n${draft}`);
-    const system = "You are a thoughtful writing assistant. The writer is composing a text and has shared their current notes and draft below. "
+    const system = "You are a thoughtful writing assistant. The writer is composing a text and has shared their plan and current draft below. "
       + "Read them carefully, then help the writer: ask clarifying questions, point out gaps or unclear parts, and suggest directions. "
       + "Keep your help focused and useful for the writing task.\n\n"
       + (contextParts.length ? contextParts.join("\n\n") : "(The writer hasn't written anything yet.)");
-    const messages = [{ role: "system", content: system }, ...S.chat.filter(m => !m.thinking)];
-    const { text: reply, backend } = await VLLM.chat(messages);
+    const messages = [{ role: "system", content: system }, ...S.chat.slice(0, thinkingIdx).filter(m => !m.thinking && !m.error).map(m => ({ role: m.role, content: m.content }))];
+    const { text: reply, backend } = await chatReply(messages);
     S.chat[thinkingIdx] = { role: "assistant", content: reply };
     logEv("chat", { user: text, reply, backend });
   } catch (e) {
-    // Connection failed: keep the error message and offer a retry button
     S.chat[thinkingIdx] = { role: "assistant", content: "Error: " + friendlyErr(e), error: true, retryText: text };
   }
-  btn.disabled = false; renderChat(); refresh();
+  btn.disabled = false; renderChat();
+  // The conversation is part of the prompt, so plan bits, text bits and suggestions all change.
+  updateNotes(); refresh();
 }
 function retryChat(text) {
-  const box = $("chatBox");
-  box.value = text;
+  // Drop the failed exchange, then send the same message again.
+  const i = S.chat.findIndex(m => m.error && m.retryText === text);
+  if (i > 0 && S.chat[i - 1].role === "user" && S.chat[i - 1].content === text) S.chat.splice(i - 1, 2);
+  $("chatBox").value = text;
   sendChat();
 }
 
 /* ================= Wire up ================= */
 function bind() {
   const cap = $("cap");
+  // Clicking blank space focuses the editor; dragging over the text selects words so they can be deleted (Simon).
   $("sheet").addEventListener("mousedown", e => {
     if (e.target.closest("button")) return;
-    cap.focus();
-    // Allow selecting text on the doc; clicking blank space prevents default (avoids placing a text caret)
-    if (!e.target.closest(".doc")) e.preventDefault();
+    if (!e.target.closest(".doc")) { e.preventDefault(); cap.focus(); }
   });
-  cap.addEventListener("keydown", onKeyDown);
-  cap.addEventListener("input", onInput);
-  // When selecting draft text the focus is not on cap, so handle deletion at the document level
+  $("sheet").addEventListener("mouseup", () => { const sel = getSelection(); if (!sel || sel.isCollapsed) cap.focus(); });
+  // With text selected, focus isn't in the editor, so handle Backspace/Delete at the page level.
   document.addEventListener("keydown", e => {
     if ((e.key === "Backspace" || e.key === "Delete") && !e.target.closest("textarea, input, select")) {
       const sel = getSelection();
       if (sel && !sel.isCollapsed && $("doc").contains(sel.anchorNode) && $("doc").contains(sel.focusNode)) {
         e.preventDefault(); markKey();
-        const structural = deleteSelection(); afterChange(structural);
+        const structural = deleteSelection(); afterChange(structural); cap.focus();
       }
     }
   });
+  cap.addEventListener("keydown", onKeyDown);
+  cap.addEventListener("input", onInput);
   cap.addEventListener("compositionstart", () => { composing = true; });
   cap.addEventListener("compositionend", () => { composing = false; onInput(); });
   $("slots").addEventListener("mousedown", e => e.preventDefault());
   $("slots").addEventListener("click", e => {
     const b = e.target.closest("[data-pick]"); if (!b) return;
-    markKey(); pick(+b.dataset.pick); cap.focus();
-  });
-  $("chatToggle").addEventListener("click", () => setChatOpen(!S.chatOpen));
-  $("chatClose").addEventListener("click", () => setChatOpen(false));
-  $("chatForm").addEventListener("submit", e => { e.preventDefault(); sendChat(); });
-  $("chatBox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
-  $("chatLog").addEventListener("click", e => {
-    const b = e.target.closest("[data-retry]"); if (!b) return;
-    retryChat(b.dataset.retry);
+    markKey(); if (!pick(+b.dataset.pick)) { S.keystrokes--; S.pendingKeys--; } cap.focus();
   });
   $("notes").addEventListener("input", () => {
     S.notes = $("notes").value; clearTimeout(bind.nt);
-    bind.nt = setTimeout(() => { updateNotes(); logEv("notes", { length: S.notes.length }); refresh(); }, isDemo() ? 150 : 500);
+    bind.nt = setTimeout(() => { updateNotes(); logEv("notes", { length: S.notes.length }); refresh(); }, 500);
   });
-  $("mode").addEventListener("change", () => { S.mode = $("mode").value; logEv("mode", { condition: S.mode }); S.example ? resetSession() : refresh(); });
-  $("startBtn").addEventListener("click", () => { $("notes").value = ""; S.notes = ""; updateNotes(); resetSession(); cap.focus(); });
+  $("mode").addEventListener("change", () => { S.mode = $("mode").value; logEv("mode", { condition: S.mode }); refresh(); });
+  $("retryBtn").addEventListener("click", () => connectServer());
   const nb = $("newBtn");
   nb.addEventListener("click", () => {
     if (!S.units.length || nb.dataset.armed === "1") { nb.dataset.armed = ""; nb.textContent = "New session"; resetSession(); cap.focus(); return; }
@@ -1162,23 +1301,36 @@ function bind() {
   $("genBtn").addEventListener("click", async () => {
     const btn = $("genBtn"); btn.disabled = true; markKey();
     try {
-      const out = isDemo() ? DEMO.generate() : await VLLM.generate();
-      out.forEach((o, i) => pushUnit({ text: o.text, n: isDemo() ? o.n : undefined, src: "generated", bits: bitsOf(o.p), hbits: 0, keys: i === 0 ? S.pendingKeys : 0 }));
-      S.pendingKeys = 0; S.err = null; logEv("generate", { units: out.length });
+      if (!S.connected) throw new Error("Not connected to the model server yet.");
+      const out = await vllmGenerate();
+      const text = S.buffer + out; S.buffer = "";
+      commitChunk(text, "generated", 0, {});
+      S.err = null; logEv("generate", { chars: out.length });
+      scheduleScore();
     } catch (e) { S.err = friendlyErr(e); }
-    btn.disabled = false; S.example = false; render();
+    btn.disabled = false; render();
   });
   const setS = (k, v) => { S.settings[k] = v; logEv("setting", { k, v }); };
-  $("thr").addEventListener("input", () => { setS("thr", +$("thr").value); $("thrOut").textContent = fmt(S.settings.thr) + " bits"; if (!isDemo() && S.sugg && S.sugg.pos) S.sugg = suggFromPositions(S.sugg.pos, S.sugg.ms); refresh(); });
+  $("thr").addEventListener("input", () => { setS("thr", +$("thr").value); $("thrOut").textContent = fmt(S.settings.thr) + " bits"; refresh(); });
   $("ghostMax").addEventListener("input", () => { setS("ghostMax", +$("ghostMax").value); $("ghostOut").textContent = S.settings.ghostMax + (S.settings.ghostMax === 1 ? " word" : " words"); refresh(); });
   $("kOpt").addEventListener("change", () => { setS("k", +$("kOpt").value); render(); });
+  $("wordsOpt").addEventListener("change", () => { setS("words", +$("wordsOpt").value); refresh(); });
   $("pickKeys").addEventListener("change", () => { setS("pickKeys", $("pickKeys").value); render(); });
   $("showSrc").addEventListener("change", () => { S.settings.showSrc = $("showSrc").checked; render(); });
-  $("backend").addEventListener("change", () => { setS("backend", $("backend").value); MODEL.cache.clear(); updateNotes(); refresh(); });
-  $("vurl").addEventListener("change", () => setS("url", $("vurl").value.trim()));
-  $("vmodel").addEventListener("change", () => setS("model", $("vmodel").value.trim()));
-  $("connectBtn").addEventListener("click", () => connectServer(false));
+  $("vurl").addEventListener("change", () => { setS("url", $("vurl").value.trim()); prefixCache.clear(); });
+  $("vmodel").addEventListener("change", () => { setS("model", $("vmodel").value.trim()); prefixCache.clear(); });
+  $("connectBtn").addEventListener("click", () => connectServer());
   $("logPanel").addEventListener("toggle", renderLog);
+  $("chatToggle").addEventListener("click", () => setChatOpen(!S.chatOpen));
+  $("chatClose").addEventListener("click", () => setChatOpen(false));
+  $("chatForm").addEventListener("submit", e => { e.preventDefault(); sendChat(); });
+  $("chatBox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+  $("chatLog").addEventListener("click", e => { const b = e.target.closest("[data-retry]"); if (b) retryChat(b.dataset.retry); });
+  $("measureBtn").addEventListener("click", async () => {
+    S.measuring = true; S.measureErr = null; render();
+    try { await measureNotes(); } catch (e) { S.measureErr = friendlyErr(e); }
+    S.measuring = false; render();
+  });
   $("copyLog").addEventListener("click", () => {
     const txt = JSON.stringify(sessionLog(), null, 2); $("logPre").textContent = txt;
     const done = () => { $("logToast").textContent = "Copied"; setTimeout(() => $("logToast").textContent = "", 1800); };
@@ -1192,27 +1344,36 @@ function bind() {
       const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
       a.download = `session-${S.mode}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`; a.click();
     });
-    $("backendHint").textContent = "Connects to the class server on load. Connect lists the server's models and picks Qwen 3.8.";
-  } else {
-    $("backend").querySelector('option[value="vllm"]').disabled = true;
-    ["vurl", "vmodel", "connectBtn"].forEach(id => $(id).disabled = true);
-    $("backendHint").textContent = "This preview can only run the demo model. Download bit_meter.html and open it in your browser to use the class server.";
   }
 }
-async function connectServer(quiet) {
+function renderConn() {
+  const note = $("connNote"); note.hidden = S.connected;
+  if (S.connected) return;
+  $("retryBtn").hidden = S.connecting;
+  $("connMsg").textContent = S.connecting ? `Connecting to ${S.settings.url}…`
+    : IN_FRAME ? "This preview can't reach the model server. Download bit_meter.html and open it in your browser."
+    : `Can't reach the model server at ${S.settings.url}. Check your internet connection and try again.`;
+}
+async function connectServer() {
   S.settings.url = $("vurl").value.trim();
+  S.connecting = true; render();
   try {
-    const id = await VLLM.connect(); S.settings.model = id; $("vmodel").value = id;
-    $("backend").value = "vllm"; S.settings.backend = "vllm"; S.err = null; MODEL.cache.clear();
+    const id = await vllmConnect();
+    S.settings.model = id; $("vmodel").value = id;
+    S.connected = true; S.err = null; prefixCache.clear();
     logEv("connect", { url: S.settings.url, model: id });
-    if (S.example) { $("notes").value = ""; S.notes = ""; resetSession(); }
+    $("backendHint").textContent = `Connected to ${S.settings.url} · ${id}`;
     updateNotes(); refresh();
   } catch (e) {
-    if (quiet) { $("backendHint").textContent = `Couldn't reach ${S.settings.url}, so the demo model is running. Open Settings and press Connect to try again.`; }
-    else { S.err = friendlyErr(e); render(); }
+    S.connected = false;
+    $("backendHint").textContent = friendlyErr(e);
   }
+  S.connecting = false; render();
 }
 bind();
-simulateExample();
-if (!IN_FRAME) connectServer(true);
+render();
+connectServer();
 </script>
+
+</body>
+</html>
