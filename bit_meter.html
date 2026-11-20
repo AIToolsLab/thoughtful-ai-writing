@@ -787,6 +787,17 @@ function commitChunk(text, src, claim, extra) {
   pieces(text).forEach((p, i) => pushUnit(Object.assign({ text: p, src, g, claim: i === 0 ? claim : 0, keys: i === 0 ? S.pendingKeys : 0, bits: null, hbits: null }, i === 0 ? extra : {})));
   S.pendingKeys = 0;
 }
+function commitMixed(prefix, suffix, src, claim, extra) {
+  const selectionKeys = 1;
+  if (prefix) {
+    S.pendingKeys = Math.max(0, S.pendingKeys - selectionKeys);
+    commitTyped(prefix);
+  }
+  if (suffix) {
+    S.pendingKeys = selectionKeys;
+    commitChunk(suffix, src, claim, extra);
+  }
+}
 function typeChar(c) {
   if (c === "\r") return;
   if (c === "\n") { if (S.buffer.trim()) commitTyped(S.buffer); S.buffer = ""; commitTyped("\n"); return; }
@@ -814,8 +825,8 @@ function pick(i) {
   // exactly (prefix_logprob); before its answer arrives, the shown options' total stands in.
   const prefixBits = partial ? bitsOf(Math.min(1, v.prefixMass != null ? v.prefixMass : Math.max(shown, o.prob))) : 0;
   const prefix = partial ? S.buffer.trim() : "";
-  const text = S.buffer + o.text; S.buffer = "";
-  commitChunk(text, "chose", prefixBits + bitsOf(o.prob / shown), {
+  const suffix = o.text; S.buffer = "";
+  commitMixed(prefix, suffix, "chose", prefixBits + bitsOf(o.prob / shown), {
     choice: i, H: v.H, prefix, opts: v.opts.map(x => ({ text: x.text, p: +(x.prob || 0).toFixed(6) })),
   });
   logEv("pick", { i, text: o.text });
@@ -827,8 +838,8 @@ function acceptGhost(all) {
   const chunk = all ? v.ghost : (firstWords(v.ghost, 1) || (v.ghost.match(/^\s*\S+/) || [v.ghost])[0]);
   const partial = S.buffer.trim() !== "";
   const prefix = partial ? S.buffer.trim() : "";
-  const text = S.buffer + chunk; S.buffer = "";
-  commitChunk(text, "accepted", partial ? bitsOf(Math.min(1, v.prefixMass != null ? v.prefixMass : 1)) : 0, prefix ? { prefix } : {});
+  S.buffer = "";
+  commitMixed(prefix, chunk, "accepted", partial ? bitsOf(Math.min(1, v.prefixMass != null ? v.prefixMass : 1)) : 0, prefix ? { prefix } : {});
   // Keep showing the rest of the grey text until new suggestions arrive.
   const rest = v.ghost.slice(chunk.length);
   if (S.sugg) S.sugg = Object.assign({}, S.sugg, { draft: draftText(), items: [], ghost: rest, H: 0 });
