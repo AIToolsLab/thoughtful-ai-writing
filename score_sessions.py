@@ -4,8 +4,8 @@
 Each session log (exported from bit_meter.html) records every word, who put it
 there (typed / chose / accepted / generated) and the bits the page computed
 live. For the study, every condition must be measured by the same model, so by
-default this script rescores the final text of each session with your vLLM
-server and recomputes the bits per word.
+default this script rescores the final text of each session with the writing
+engine and recomputes the bits per word.
 
 Scoring uses the same chat framing as the page (see qwen_chat.py): the plan is the
 user's request and the text is the assistant's reply.
@@ -47,7 +47,7 @@ def rescore(log, base, model):
     messages = log.get("messages") or qc.history_for(log.get("notes"), chat, head=head, base_request=base_request)
     text = "".join(u["text"] for u in log["units"])
     # One pass over chat + plan + text, split by who supplied each part (see qwen_chat.split_bits).
-    split, toks = qc.split_bits(base, model, messages, log.get("notes"), text)
+    split, toks = qc.split_bits(base, model, messages, log.get("notes"), text, head=head)
     log["split"] = split
     starts, pos = [], 0
     for u in log["units"]:
@@ -149,7 +149,7 @@ def plot(rows, out_png):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("logs", nargs="+", help="session JSON files exported from the Bit Meter")
-    ap.add_argument("--vllm", default=qc.DEFAULT_SERVER, help="vLLM server address")
+    ap.add_argument("--vllm", default=qc.DEFAULT_SERVER, help="writing engine address (flag name kept for old commands)")
     ap.add_argument("--model", default=None, help="model name (default: first model the server lists)")
     ap.add_argument("--no-rescore", action="store_true", help="use the bits recorded in the logs")
     ap.add_argument("--include-examples", action="store_true", help="keep the page's built-in example session")

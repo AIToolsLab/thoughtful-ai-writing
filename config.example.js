@@ -11,7 +11,7 @@ window.DEEPSEEK_CONFIG = {
   // The proxy forwards to the school's DeepSeek server and adds CORS headers.
   url: "http://localhost:3000",
   // Model id served by the local endpoint.
-  model: "deepseek-ai/DeepSeek-V4-Flash-0731",
+  model: "DeepSeek-V4.1-Flash-1017",
   // Your API key. Keep this private — it is only read from this local file.
   apiKey: "PASTE_YOUR_API_KEY_HERE",
 };

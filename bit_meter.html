@@ -367,13 +367,13 @@ pre.log {
         <span class="row"><input type="checkbox" id="showSrc" checked> <span class="hint">Shows who supplied each word while writing</span></span>
       </label>
       <div class="field"><span>Model server</span>
-        <span class="hint" id="backendHint">Connects to Prof. Arnold's vLLM server on load and picks the Qwen 3.8 model.</span>
+        <span class="hint" id="backendHint">Connects to Prof. Arnold's writing engine on load and picks the Qwen 3.8 model.</span>
       </div>
-      <label class="field" for="vurl"><span>vLLM address</span>
-        <input type="url" id="vurl" value="https://vllm.thoughtful-ai.com" spellcheck="false">
+      <label class="field" for="vurl"><span>Engine address</span>
+        <input type="url" id="vurl" value="https://llm.thoughtful-ai.com" spellcheck="false">
       </label>
-      <div class="field"><span>vLLM model name</span>
-        <span class="row"><input type="text" id="vmodel" list="vmodels" placeholder="filled in by Connect" spellcheck="false" aria-label="vLLM model name" style="flex:1"><datalist id="vmodels"></datalist><button id="connectBtn" type="button">Connect</button></span>
+      <div class="field"><span>Model name</span>
+        <span class="row"><input type="text" id="vmodel" list="vmodels" placeholder="filled in by Connect" spellcheck="false" aria-label="Model name" style="flex:1"><datalist id="vmodels"></datalist><button id="connectBtn" type="button">Connect</button></span>
       </div>
     </div>
   </details>
@@ -398,7 +398,7 @@ pre.log {
         </tbody>
       </table>
     </div>
-    <p class="hint">With the class server, the model sees a chat: your plan is the request and your text is the reply. Predictions use the token engine from Prof. Arnold's writing-prototypes (token healing, whole-word options). An option with several words counts its choice bits once, on its first word. Rescore the exported logs with <code>score_sessions.py</code> so every condition is measured by the same model.</p>
+    <p class="hint">With the class server, the model sees a chat: your plan is the request and your text is the reply. Predictions and scores come from Prof. Arnold's writing engine (llm.thoughtful-ai.com), which reads your typing as characters, so half-typed words are handled on the server, and offers whole words with the model's own probabilities. An option with several words counts its choice bits once, on its first word. Rescore the exported logs with <code>score_sessions.py</code> so every condition is measured by the same model.</p>
   </details>
 
   <details class="panel" id="logPanel">
@@ -413,7 +413,7 @@ pre.log {
 </div>
 
 <!-- Optional: config.js can set window.DEEPSEEK_CONFIG = { url, model, apiKey } for chat replies.
-     Keep config.js out of GitHub (it holds an API key); without it, chat uses the class vLLM server. -->
+     Keep config.js out of GitHub (it holds an API key); without it, chat uses Qwen on the writing engine. -->
 <script src="config.js"></script>
 <script>
 "use strict";
@@ -432,7 +432,7 @@ const S = {
   // Simon: the chat box can fill this; predictions and bit scoring both read it.
   chat: [], chatOpen: false, split: null,
   sugg: null, hidden: false, err: null, warn: "", connected: false, connecting: false,
-  settings: { thr: 2.5, ghostMax: 6, k: 5, words: 1, pickKeys: "alt", showSrc: true, url: "https://vllm.thoughtful-ai.com", model: "" },
+  settings: { thr: 2.5, ghostMax: 6, k: 5, words: 1, pickKeys: "alt", showSrc: true, url: "https://llm.thoughtful-ai.com", model: "" },
 };
 const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
 const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
@@ -455,11 +455,6 @@ const ctxNorms = (units = S.units) => {
 // Split text into word-sized pieces without losing any characters.
 const PIECE_RE = /\n|[ \t]*[A-Za-z0-9][A-Za-z0-9'’-]*|[ \t]*[^\sA-Za-z0-9]|[ \t]+/g;
 const pieces = s => s.match(PIECE_RE) || [];
-// Leading whitespace plus the first n whitespace-delimited words.
-function firstWords(text, n) {
-  const m = text.match(new RegExp(`^\\s*\\S+(?:[ \\t]+\\S+){0,${n - 1}}`));
-  return m ? m[0] : text;
-}
 const sumBits = toks => toks.reduce((a, t) => a + t.bits, 0);
 function entropyOf(items) {
   const ps = items.map(o => o.prob || 0), s = ps.reduce((a, b) => a + b, 0);
@@ -470,59 +465,61 @@ function entropyOf(items) {
   return H;
 }
 
-/* ================= Model server ================= */
-// Ported from AIToolsLab/writing-prototypes, docs/llm.js (Nov 2026). Prompts use the model's chat
-// template with thinking off; response text is appended to the rendered prefix ourselves, so the
-// template can't trim its whitespace.
-const CHAT_TEMPLATE_KWARGS = { enable_thinking: false };
+/* ================= Model server: Prof. Arnold's writing engine ================= */
+// Ported from AIToolsLab/writing-prototypes (docs/llm.js, docs/engine-tokens.js, engine/MIGRATING.md),
+// Nov 13 2026. The engine at llm.thoughtful-ai.com replaced the vLLM server. It reads characters,
+// not tokens, so there is no token healing here any more:
+//   POST /v1/template       {messages}             → {prompt}  (the chat template, thinking off)
+//   POST /v1/continuations  {session, prompt, text, stop} → likely continuations of the draft, each
+//                           with P(continuation | the characters typed)
+//   POST /v1/score          {session, prompt, text} → for each token of text: its logprob
+// Requests are sent as text/plain, so the browser skips a CORS preflight on every keystroke.
+// A newer request in the same session supersedes older ones (HTTP 409), which we treat as an abort.
+const SESSION = (globalThis.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2);
 const baseUrl = () => S.settings.url.replace(/\/+$/, "");
-async function post(path, body, signal) {
+async function enginePost(path, body, signal) {
   const res = await fetch(baseUrl() + path, {
-    method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal,
+    method: "POST", credentials: "omit", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(body), signal,
   });
+  if (res.status === 409) throw new DOMException("superseded", "AbortError");
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
   return res.json();
 }
-const prefixCache = new Map();
-function cached(key, fn) {
-  key = S.settings.url + "|" + S.settings.model + "|" + key;
-  if (!prefixCache.has(key)) {
-    const promise = fn();
-    promise.catch(() => { if (prefixCache.get(key) === promise) prefixCache.delete(key); });
-    prefixCache.set(key, promise);
-    if (prefixCache.size > 16) prefixCache.delete(prefixCache.keys().next().value);
-  }
-  return prefixCache.get(key);
+// A few recent results, keyed by `key`; failed results are dropped so the next call retries.
+function makeCache(limit) {
+  const map = new Map();
+  const get = (key, fn) => {
+    key = S.settings.url + "|" + key;
+    if (!map.has(key)) {
+      const promise = fn();
+      promise.catch(() => { if (map.get(key) === promise) map.delete(key); });
+      map.set(key, promise);
+      if (map.size > limit) map.delete(map.keys().next().value);
+    }
+    return map.get(key);
+  };
+  get.clear = () => map.clear();
+  return get;
 }
-// The chat-templated prompt for `messages`, ending with the assistant generation prompt.
-function chatPrefix(messages) {
-  return cached(JSON.stringify(["assistant", messages]), async () => {
-    const { tokens } = await post("/tokenize", { model: S.settings.model, messages, add_generation_prompt: true, chat_template_kwargs: CHAT_TEMPLATE_KWARGS });
-    const { prompt } = await post("/detokenize", { model: S.settings.model, tokens });
-    return { ids: tokens, text: prompt };
-  });
-}
-// The prompt up to the start of a message from `role` after `history`.
+const prefixCache = makeCache(16);   // rendered chat prefixes
+const scoreCache = makeCache(64);    // scores of chat turns and the plan, which rarely change
+// The chat-templated prompt up to where `role`'s message starts, after `history`.
 const PLACEHOLDER = "XYZZYPLACEHOLDER";
-function turnPrefix(history, role) {
-  if (role === "assistant") return chatPrefix(history);
-  return cached(JSON.stringify([role, history]), async () => {
-    const { tokens } = await post("/tokenize", { model: S.settings.model, messages: [...history, { role, content: PLACEHOLDER }], add_generation_prompt: false, chat_template_kwargs: CHAT_TEMPLATE_KWARGS });
-    const { prompt } = await post("/detokenize", { model: S.settings.model, tokens });
+function enginePrefix(history, role) {
+  return prefixCache(JSON.stringify([role, history]), async () => {
+    if (role === "assistant") return (await enginePost("/v1/template", { messages: history, add_generation_prompt: true, enable_thinking: false })).prompt;
+    // A user turn has no generation prompt, so render the turn with a placeholder and cut there.
+    const { prompt } = await enginePost("/v1/template", { messages: [...history, { role, content: PLACEHOLDER }], add_generation_prompt: false, enable_thinking: false });
     const cut = prompt.lastIndexOf(PLACEHOLDER);
     if (cut === -1) throw new Error("Couldn't find the start of the message in the chat template");
-    return { text: prompt.slice(0, cut) };
+    return prompt.slice(0, cut);
   });
 }
-// Keeps generation from ending the turn; reported logprobs are from before the bias.
-function noEndBias() {
-  return cached("noEndBias", async () => {
-    const { tokens } = await post("/tokenize", { model: S.settings.model, prompt: "<|im_end|><|endoftext|>", add_special_tokens: false });
-    return Object.fromEntries(tokens.map(id => [id, -100]));
-  });
+// Free text from the engine's vLLM-compatible route (used for chat replies and Generate mode).
+async function engineGenerate(prompt, maxTokens, temperature) {
+  const j = await enginePost("/v1/completions", { model: S.settings.model, prompt, max_tokens: maxTokens, temperature });
+  return ((j.choices && j.choices[0] && j.choices[0].text) || "").replace(/<\|im_end\|>[\s\S]*$/, "");
 }
-const completions = (body, signal) => post("/v1/completions", Object.assign({ model: S.settings.model }, body), signal);
-const isSpecialToken = tok => /^<\|.*\|>$/.test(tok);
 
 /* ---- The writer's plan, as the request in a chat ---- */
 const BASE_REQUEST = "Help me write a short piece.";
@@ -532,147 +529,111 @@ const chatTurns = () => S.chat.filter(m => !m.thinking && !m.error && m.content)
 const historyFor = (notes = S.notes) => [...chatTurns(), { role: "user", content: requestText(notes) }];
 const messagesFor = (draft, notes = S.notes) => [...historyFor(notes), { role: "assistant", content: draft }];
 
-/* ---- Scoring: bits of each token of `span`, which ends the prompt ---- */
-// Returns [{at, bits}], where `at` is the offset in `span` of the token's first non-space character.
-async function scoreSpan(prefix, span, signal) {
-  if (!span) return [];
-  const res = await completions({ prompt: prefix + span, max_tokens: 1, temperature: 0, prompt_logprobs: 1, return_token_ids: true }, signal);
-  const { prompt_logprobs: plp, prompt_token_ids: ids } = res.choices[0];
-  const out = [];
-  let end = span.length;
-  for (let i = ids.length - 1; i >= 0 && end > 0; i--) {
-    const e = plp[i] && plp[i][String(ids[i])];
-    if (!e) break;
-    const t = e.decoded_token ?? "", start = end - t.length;
-    const lead = t.length - t.trimStart().length;
-    const at = lead < t.length ? start + lead : start;
-    if (at >= 0) out.push({ at, bits: -e.logprob / Math.LN2 });
-    end = start;
+/* ---- Scoring ---- */
+// Bits of each token of `text` given `prompt`, as [{at, bits}], where `at` is the offset in `text` of
+// the token's first non-space character (so " Car" belongs to "C"). The engine's token texts
+// concatenate to `text`. Scores use their own session so they don't supersede predictions.
+async function scoreText(prompt, text, signal, session = SESSION + ":score") {
+  if (!text) return [];
+  const { tokens } = await enginePost("/v1/score", { session, prompt, text }, signal);
+  const out = []; let pos = 0;
+  for (const t of tokens) {
+    const lead = t.text.length - t.text.trimStart().length;
+    out.push({ at: lead < t.text.length ? pos + lead : pos, bits: -t.logprob / Math.LN2 });
+    pos += t.text.length;
   }
-  return out.reverse();
+  return out;
 }
+const scoreCached = (prompt, text) => scoreCache(JSON.stringify([prompt, text]), () => scoreText(prompt, text));
+const planBits = async (notes, turns = chatTurns()) =>
+  notes ? sumBits(await scoreCached((await enginePrefix(turns, "user")) + REQUEST_HEAD, notes)) : 0;
 
-/* ---- Predictions ---- */
-// Ported from AIToolsLab/writing-prototypes, docs/engine-tokens.js (Nov 2026): token healing at the
-// last pre-token boundary, two spines with alternatives, then one batched extension to whole words.
-// Changes here: returns the top branch so we can extend it into grey text.
-const PRETOKENIZE_REGEX = /'[sS]|'[tT]|'[rR][eE]|'[vV][eE]|'[mM]|'[lL][lL]|'[dD]|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+/gu;
-function splitLastPretoken(text) {
-  let start = text.length;
-  for (const match of text.matchAll(PRETOKENIZE_REGEX)) start = match.index;
-  return [text.slice(0, start), text.slice(start)];
-}
-function startsWith(text) {
-  const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return { structured_outputs: { regex: escaped + "[\\s\\S]*" } };
-}
-const NUM_SUGGESTIONS = 5;
-async function tokenSuggestions({ messages, words, onUpdate }, signal) {
-  const { role, content: draft } = messages.at(-1);
-  const [base, typed] = splitLastPretoken(draft);
-  const [prefix, logitBias] = await Promise.all([turnPrefix(messages.slice(0, -1), role), noEndBias()]);
-  const prompt = prefix.text + base;
-  const spineParams = { logprobs: 20, temperature: 0, logit_bias: logitBias, return_token_ids: true };
-  const [unhealedRes, healedRes] = await Promise.all([
-    completions(Object.assign({ prompt: prefix.text + draft, max_tokens: 3, prompt_logprobs: 1 }, spineParams), signal),
-    typed && completions(Object.assign({ prompt, max_tokens: 3 + Math.ceil(typed.length / 4) }, spineParams, startsWith(typed)), signal),
-  ]);
-  const unhealed = unhealedRes.choices[0];
-  const baseIds = typed ? healedRes.choices[0].prompt_token_ids : unhealed.prompt_token_ids;
-  const warning = boundaryWarning(baseIds, unhealed.prompt_token_ids, base) ||
-    (!typed || healedRes.choices[0].text.startsWith(typed) ? "" : "The server ignored the constraint to continue the partial word, so predictions may be missing.");
-  const typedLogprob = unhealed.prompt_token_ids.slice(baseIds.length)
-    .reduce((sum, id, j) => sum + unhealed.prompt_logprobs[baseIds.length + j][String(id)].logprob, 0);
-  let branches = spineBranches(unhealed.logprobs, typed, typed, typedLogprob);
-  if (typed) branches.push(...spineBranches(healedRes.choices[0].logprobs, typed, "", 0));
-  branches.sort((a, b) => b.prob - a.prob);
-  branches = branches.filter((b, i) => branches.findIndex(c => c.forced === b.forced) === i);
-  const shown = new Set();
-  branches = branches.filter(b => {
-    b.final = completeWords(b.forced.slice(typed.length), words);
-    if (b.final === null) return true;
-    if (shown.has(b.final)) return false;
-    shown.add(b.final);
-    return true;
-  }).slice(0, NUM_SUGGESTIONS + 2);
-  const toSuggestions = () => uniqueSuggestions(branches.map(b => ({
-    text: b.final ?? firstWords(b.forced.slice(typed.length), words), prob: b.prob,
-  })));
-  onUpdate(toSuggestions());
-  const unfinished = branches.filter(b => b.final === null);
-  if (unfinished.length > 0) {
-    const extRes = await completions({ prompt: unfinished.map(b => prompt + b.forced), max_tokens: 2 * words, temperature: 0, logit_bias: logitBias }, signal);
-    for (const choice of extRes.choices) {
-      const b = unfinished[choice.index];
-      b.final = firstWords((b.forced + choice.text).slice(typed.length), words);
-    }
-  }
-  return { suggestions: toSuggestions(), warning, ctx: { prompt, typed, top: branches[0] ? branches[0].forced : null, logitBias } };
-}
-function spineBranches({ tokens, token_logprobs, top_logprobs }, typed, pathText, pathLogprob) {
-  const branches = [];
-  for (let j = 0; j < tokens.length; j++) {
-    for (const [tok, logprob] of Object.entries(top_logprobs[j])) {
-      const forced = pathText + tok;
-      if (isSpecialToken(tok) || !forced.startsWith(typed) || !forced.slice(typed.length).trim()) continue;
-      branches.push({ forced, prob: Math.exp(pathLogprob + logprob) });
-    }
-    pathText += tokens[j];
-    pathLogprob += token_logprobs[j];
-  }
-  return branches;
-}
-function boundaryWarning(baseIds, draftIds, base) {
-  if (baseIds.every((id, i) => id === draftIds[i])) return "";
-  return `Tokenization warning: the draft's tokens don't start with the tokens of ${JSON.stringify(base.slice(-20))}. Mid-word predictions may be off.`;
+/* ---- Words (from docs/llm.js) ----
+   Suggestions are words, never punctuation. Apostrophes and hyphens inside a word are part of it, and
+   so is punctuation between letters ("U.S.", "1,000", "and/or"). These patterns are also sent to the
+   server as its `stop` regex, so they must mean the same in JavaScript and C++. */
+const PUNCT = `[.,;:!?"()\\[\\]{}*<>\`]|…|—|–|“|”`;
+const WORD_START = `(?:(?!${PUNCT}|-)\\S)`, WORD_CHAR = `(?:(?!${PUNCT})\\S)`;
+const WORD = `(?:(?:${WORD_START}${WORD_CHAR}*\\.){2,}|${WORD_START}(?:${WORD_CHAR}|[.,:/](?=${WORD_START}))*)`;
+// The first n words once they're known to be whole, or just the leading whitespace before punctuation.
+function wordUnitPattern(n) {
+  return `^\\s*${WORD}(?:[ \\t]+${WORD}){${n - 1}}(?=\\s)` +
+    `|^\\s*${WORD}(?:[ \\t]+${WORD}){0,${n - 1}}(?=(?:${PUNCT})(?:\\s|${PUNCT}))` +
+    `|^\\s*(?=${PUNCT}|-)`;
 }
 function completeWords(text, n) {
-  const match = text.match(new RegExp(`^\\s*\\S+(?:[ \\t]+\\S+){${n - 1}}(?=\\s)`));
+  const match = text.match(new RegExp(wordUnitPattern(n)));
   return match ? match[0] : null;
 }
-function uniqueSuggestions(suggestions) {
-  return suggestions.filter((s, i) => s.text.trim() && suggestions.findIndex(t => t.text === s.text) === i).slice(0, NUM_SUGGESTIONS);
+// Leading whitespace plus up to the first n words, which may still be growing.
+function firstWords(text, n) {
+  const match = text.match(new RegExp(`^\\s*${WORD}(?:[ \\t]+${WORD}){0,${n - 1}}`));
+  return match ? match[0] : "";
 }
-// Grey text: the top branch, extended greedily, cut at a sentence end or after ghostMax words.
-async function extendGhost(ctx, signal) {
-  if (!ctx.top) return "";
-  const res = await completions({ prompt: ctx.prompt + ctx.top, max_tokens: 2 * S.settings.ghostMax + 2, temperature: 0, logit_bias: ctx.logitBias }, signal);
-  let g = firstWords((ctx.top + res.choices[0].text).slice(ctx.typed.length), S.settings.ghostMax);
-  const nl = g.indexOf("\n"); if (nl > 0) g = g.slice(0, nl);
-  const m = g.match(/^[\s\S]*?[.!?](?=\s|$)/); if (m) g = m[0];
-  return g;
+
+/* ---- Predictions (from docs/engine-tokens.js) ---- */
+const NUM_SUGGESTIONS = 5;
+// Group continuations by the words they start with, adding up their probabilities (a lower bound:
+// branches the server didn't follow are missing). Whole words first, then partial ones.
+function unitSuggestions(continuations, words) {
+  const units = new Map();
+  for (const { text, prob, done, end } of continuations) {
+    const t = end ? text + " " : text;  // ending the turn ends the word too
+    const whole = completeWords(t, words);
+    const unit = whole === null ? { text: firstWords(t, words), complete: false } : { text: whole, complete: true };
+    if (!unit.text.trim()) continue;
+    const u = units.get(unit.text) || { text: unit.text, prob: 0, complete: false };
+    u.prob += prob;
+    u.complete = u.complete || unit.complete || !!done;
+    units.set(unit.text, u);
+  }
+  return [...units.values()].sort((a, b) => b.complete - a.complete || b.prob - a.prob)
+    .slice(0, NUM_SUGGESTIONS).map(({ text, prob }) => ({ text, prob }));
 }
-async function vllmSuggest(draft, signal, onEarly) {
-  const t0 = now(), partial = S.buffer.trim() !== "";
-  // When the draft already ends in a space, drop an option's own leading space, then merge duplicates.
-  const endsInSpace = /[ \t]$/.test(draft);
-  const fix = t => endsInSpace ? t.replace(/^[ \t]+/, "") : t;
-  const tidy = items => {
-    const out = [];
-    for (const o of items) { const text = fix(o.text); const dup = out.find(x => x.text === text); if (dup) dup.prob += o.prob; else if (text.trim() || text.includes("\n")) out.push({ text, prob: o.prob }); }
-    return out.sort((x, y) => y.prob - x.prob);
-  };
-  const pack = raw => { const items = tidy(raw); return { draft, items, H: entropyOf(items), ghost: partial && items[0] ? items[0].text : "", prefixMass: Math.min(1, items.reduce((a, o) => a + o.prob, 0)), ms: now() - t0 }; };
-  const r = await tokenSuggestions({ messages: messagesFor(draft), words: S.settings.words, onUpdate: items => onEarly(pack(items)) }, signal);
-  const out = pack(r.suggestions);
-  out.warning = r.warning;
-  if (!partial && out.items.length && out.H < S.settings.thr) out.ghost = fix(await extendGhost(r.ctx, signal));
+// While waiting for the server, what the last answer implies for the characters typed since.
+function narrow({ continuations }, extra) {
+  continuations = continuations.filter(c => !c.replace);
+  const matching = continuations.filter(c => c.text.length > extra.length && c.text.startsWith(extra));
+  const seen = continuations.reduce((sum, c) => sum + c.prob, 0);
+  const total = matching.reduce((sum, c) => sum + c.prob, 0) + Math.max(0, 1 - seen);
+  return matching.map(c => Object.assign({}, c, { text: c.text.slice(extra.length), prob: c.prob / total }));
+}
+let lastAnswer = null;  // {prompt, words, draft, continuations}
+async function engineSuggest(draft, signal, onEarly) {
+  const t0 = now(), partial = S.buffer.trim() !== "", words = S.settings.words;
+  const prompt = await enginePrefix(historyFor(), "assistant");
+  const pack = (items, prefixMass) => ({ draft, items, H: entropyOf(items), ghost: partial && items[0] ? items[0].text : "", prefixMass, ms: now() - t0 });
+  const last = lastAnswer;
+  if (last && last.prompt === prompt && last.words === words && draft.length > last.draft.length && draft.startsWith(last.draft)) {
+    const local = unitSuggestions(narrow(last, draft.slice(last.draft.length)), words);
+    if (local.length) onEarly(pack(local, null));
+  }
+  const res = await enginePost("/v1/continuations", { session: SESSION, prompt, text: draft, units: NUM_SUGGESTIONS, time_ms: 150, stop: wordUnitPattern(words) }, signal);
+  lastAnswer = { prompt, words, draft, continuations: res.continuations };
+  // prefix_logprob = log P(the letters typed so far in the last word | everything before): exact prefix bits.
+  const out = pack(unitSuggestions(res.continuations.filter(c => !c.replace), words), res.prefix_logprob != null ? Math.exp(res.prefix_logprob) : null);
+  out.warning = res.unresolved > 0.05 ? "Some ways of reading the last word weren't explored, so probabilities may be a little high." : "";
+  out.serverMs = res.stats && res.stats.total_ms;
+  // Grey text: when the model is confident, the likeliest continuation, up to ghostMax words (our addition).
+  if (!partial && out.items.length && out.H < S.settings.thr) {
+    const g = await enginePost("/v1/continuations", { session: SESSION, prompt, text: draft, units: 1, time_ms: 150, stop: wordUnitPattern(S.settings.ghostMax) }, signal);
+    const top = g.continuations.filter(c => !c.replace)[0];
+    out.ghost = top ? firstWords(top.text, S.settings.ghostMax) : "";
+  }
   out.ms = now() - t0;
   return out;
 }
-async function vllmGenerate() {
-  const prefix = await chatPrefix(historyFor());
-  const res = await completions({ prompt: prefix.text + draftText(), max_tokens: 120, temperature: 0.8 });
-  return res.choices[0].text.replace(/\s+$/, "");
+async function engineConnect() {
+  const res = await fetch(baseUrl() + "/v1/models", { credentials: "omit" });
+  if (!res.ok) throw new Error(`Listing models failed: HTTP ${res.status}`);
+  const ids = ((await res.json()).data || []).map(m => m.id);
+  $("vmodels").innerHTML = ids.map(id => `<option value="${esc(id)}"></option>`).join("");
+  return ids.find(id => /3\.8/.test(id)) || ids[0] || "";
 }
-async function vllmNoteBits(notes, signal) {
-  const p = await turnPrefix(chatTurns(), "user");
-  return sumBits(await scoreSpan(p.text + REQUEST_HEAD, notes, signal));
-}
+
 // Chat replies — Simon. Uses DeepSeek through Open WebUI when config.js provides a key,
-// otherwise Qwen on the class server. The class server has no /v1/chat/completions route,
-// so the Qwen reply is generated like the predictions: the chat template (thinking off)
-// renders the messages, then /v1/completions writes the assistant turn.
+// otherwise Qwen on the writing engine. The engine has no chat-completions route, so the reply is
+// generated from the chat template (thinking off) through its vLLM-compatible /v1/completions.
 async function chatReply(messages) {
   const t0 = now();
   const cfg = (typeof window !== "undefined" && window.DEEPSEEK_CONFIG) || null;
@@ -703,23 +664,14 @@ async function chatReply(messages) {
     } catch (e) { deepseekErr = friendlyErr(e); /* fall back to Qwen on the class server */ }
   }
   try {
-    const prefix = await chatPrefix(messages);
-    const j = await completions({ prompt: prefix.text, max_tokens: 800, temperature: 0.7 });
-    const text = ((j.choices && j.choices[0] && j.choices[0].text) || "").replace(/<\|im_end\|>[\s\S]*$/, "").trim();
+    const prompt = (await enginePost("/v1/template", { messages, add_generation_prompt: true, enable_thinking: false })).prompt;
+    const text = (await engineGenerate(prompt, 800, 0.7)).trim();
     if (!text) throw new Error("Qwen returned an empty reply");
     return { text, ms: now() - t0, backend: "qwen" };
   } catch (e) {
     throw new Error((deepseekErr ? `DeepSeek failed (${deepseekErr}), then ` : "") + `Qwen failed: ${friendlyErr(e)}`);
   }
 }
-async function vllmConnect() {
-  const res = await fetch(baseUrl() + "/v1/models", { credentials: "omit" });
-  if (!res.ok) throw new Error(`Listing models failed: HTTP ${res.status}`);
-  const ids = ((await res.json()).data || []).map(m => m.id);
-  $("vmodels").innerHTML = ids.map(id => `<option value="${esc(id)}"></option>`).join("");
-  return ids.find(id => /3\.8/.test(id)) || ids[0] || "";
-}
-
 /* ================= Bits for each piece of text ================= */
 // Model bits come from scoring the whole text; human bits depend on how each piece got in.
 // typed: all of its bits. chose / accepted / generated: the claim recorded when it was added
@@ -749,57 +701,37 @@ function assignBits(toks) {
   applyHuman();
 }
 /* ---- Splitting the bits by who supplied them ----
-   The model reads one long prompt: the chat turns, then the request with the plan, then the draft.
-   We score it in one pass and add up each token's bits by the part it falls in:
+   The model reads, in order: the chat turns, then the request with the plan, then the draft.
+   Each part is scored given everything before it, and its bits go to whoever supplied it:
      writer     the writer's chat messages               (human)   was <writer>
      plan       the plan inside the request              (human)   was <notes>
      draft      the text, credited word by word below    (human or AI, by how each word got in)
      assistant  the AI's chat replies                    (AI)      was <assistant>
-     frame      chat-template markup and the fixed request wording (nobody; not counted)
-   Each part is scored given everything before it, so a reply that gives away an idea makes the
-   later draft cheaper: that information is counted once, in the reply, as AI bits. */
-function locateSegments(prefixText, msgs, notes) {
-  const segs = []; let cur = 0, ok = true;
-  const find = (str, kind, turn) => {
-    const t = str.trim(); if (!t) return;
-    const i = prefixText.indexOf(t, cur);
-    if (i < 0) { ok = false; return; }
-    segs.push({ kind, start: i, end: i + t.length, turn });
-    cur = i + t.length;
-  };
-  msgs.forEach((m, k) => {
-    if (k === msgs.length - 1) { if (notes) find(notes, "plan", k); }
-    else find(m.content, m.role === "user" ? "writer" : "assistant", k);
-  });
-  return { segs, ok };
-}
+   Chat-template markup and the fixed request wording aren't scored: nobody chose them.
+   So a reply that gives away an idea makes the later draft cheaper: that information is counted
+   once, in the reply, as AI bits. Chat turns and the plan are cached, so a keystroke only
+   rescores the draft. */
 let scoreTimer = null, scoreCtl = null;
 function scheduleScore() {
   if (!S.connected) return;
   clearTimeout(scoreTimer); if (scoreCtl) scoreCtl.abort();
   scoreTimer = setTimeout(async () => {
-    const text = docText(), notes = S.notes.trim(), msgs = historyFor(), key = JSON.stringify(msgs);
-    if (!text && !notes && msgs.length < 2) { S.split = null; render(); return; }
+    const text = docText(), notes = S.notes.trim(), turns = chatTurns(), key = JSON.stringify(historyFor());
+    if (!text && !notes && !turns.length) { S.split = null; render(); return; }
     const ctl = scoreCtl = new AbortController();
     try {
-      const prefix = await chatPrefix(msgs);
-      const toks = await scoreSpan("", prefix.text + text, ctl.signal);
+      const split = { writer: 0, assistant: 0, plan: 0, turns: turns.map(m => ({ role: m.role, bits: 0, chars: m.content.length })) };
+      for (let i = 0; i < turns.length; i++) {
+        const b = sumBits(await scoreCached(await enginePrefix(turns.slice(0, i), turns[i].role), turns[i].content));
+        split.turns[i].bits = b;
+        split[turns[i].role === "user" ? "writer" : "assistant"] += b;
+      }
+      split.plan = await planBits(notes, turns);
+      const toks = await scoreText(await enginePrefix(historyFor(), "assistant"), text, ctl.signal);
       if (ctl.signal.aborted) return;
       if (docText() !== text || JSON.stringify(historyFor()) !== key) { scheduleScore(); return; }
-      const { segs, ok } = locateSegments(prefix.text, msgs, notes);
-      const split = { writer: 0, assistant: 0, plan: 0, frame: 0, located: ok,
-        turns: msgs.slice(0, -1).map(m => ({ role: m.role, bits: 0, chars: m.content.length })) };
-      const draftToks = [], P = prefix.text.length;
-      for (const t of toks) {
-        if (t.at >= P) { draftToks.push({ at: t.at - P, bits: t.bits }); continue; }
-        const sg = segs.find(g => t.at >= g.start && t.at < g.end);
-        if (!sg) { split.frame += t.bits; continue; }
-        split[sg.kind] += t.bits;
-        if (sg.kind !== "plan") split.turns[sg.turn].bits += t.bits;
-      }
       S.split = split; S.noteBits = split.plan;
-      S.warn = ok ? S.warn : "Couldn't find every chat message in the prompt, so some chat bits may be counted as template text.";
-      assignBits(draftToks); renderChat(); render();
+      assignBits(toks); renderChat(); render();
     } catch (e) { if (e.name !== "AbortError") { S.err = friendlyErr(e); render(); } }
   }, 250);
 }
@@ -812,9 +744,11 @@ async function measureNotes() {
   if (!text.trim()) throw new Error("Write some text first, then measure.");
   if (!notes) throw new Error("Write your plan first, then measure.");
   if (!S.connected) throw new Error("Not connected to the model server yet.");
-  const [pw, pn] = await Promise.all([chatPrefix(historyFor("")), chatPrefix(historyFor(notes))]);
-  const [tw, tn, nBits] = await Promise.all([scoreSpan(pw.text, text), scoreSpan(pn.text, text), vllmNoteBits(notes)]);
-  const without = sumBits(tw), withN = sumBits(tn);
+  // One at a time, in their own session: requests in the same session supersede each other.
+  const session = SESSION + ":measure";
+  const without = sumBits(await scoreText(await enginePrefix(historyFor(""), "assistant"), text, null, session));
+  const withN = sumBits(await scoreText(await enginePrefix(historyFor(notes), "assistant"), text, null, session));
+  const nBits = await planBits(notes);
   const saved = without - withN;
   const r = {
     notesChars: notes.length, notesWords: (notes.match(/\S+/g) || []).length, words: stats().words,
@@ -853,12 +787,24 @@ function commitChunk(text, src, claim, extra) {
   pieces(text).forEach((p, i) => pushUnit(Object.assign({ text: p, src, g, claim: i === 0 ? claim : 0, keys: i === 0 ? S.pendingKeys : 0, bits: null, hbits: null }, i === 0 ? extra : {})));
   S.pendingKeys = 0;
 }
+function commitMixed(prefix, suffix, src, claim, extra) {
+  const selectionKeys = 1;
+  if (prefix) {
+    S.pendingKeys = Math.max(0, S.pendingKeys - selectionKeys);
+    commitTyped(prefix);
+  }
+  if (suffix) {
+    S.pendingKeys = selectionKeys;
+    commitChunk(suffix, src, claim, extra);
+  }
+}
 function typeChar(c) {
   if (c === "\r") return;
   if (c === "\n") { if (S.buffer.trim()) commitTyped(S.buffer); S.buffer = ""; commitTyped("\n"); return; }
   if (/\s/.test(c)) {
     if (S.buffer.trim()) commitTyped(S.buffer);
-    S.buffer = (S.units.length && lastNorm() !== PARA) ? " " : "";
+    S.buffer = "";
+    if (S.units.length && lastNorm() !== PARA) commitTyped(" ");
     return;
   }
   if (/[.,;:!?"()“”]/.test(c)) {
@@ -876,10 +822,12 @@ function pick(i) {
   const v = view(); const o = v.opts[i]; if (!o || !v.fresh) return false;
   const shown = v.opts.reduce((a, x) => a + (x.prob || 0), 0) || 1;
   const partial = S.buffer.trim() !== "";
-  const prefixBits = partial ? bitsOf(Math.min(1, Math.max(v.prefixMass || shown, o.prob))) : 0;
+  // Prefix bits: the letters typed so far in this word. The engine reports their probability
+  // exactly (prefix_logprob); before its answer arrives, the shown options' total stands in.
+  const prefixBits = partial ? bitsOf(Math.min(1, v.prefixMass != null ? v.prefixMass : Math.max(shown, o.prob))) : 0;
   const prefix = partial ? S.buffer.trim() : "";
-  const text = S.buffer + o.text; S.buffer = "";
-  commitChunk(text, "chose", prefixBits + bitsOf(o.prob / shown), {
+  const suffix = o.text; S.buffer = "";
+  commitMixed(prefix, suffix, "chose", prefixBits + bitsOf(o.prob / shown), {
     choice: i, H: v.H, prefix, opts: v.opts.map(x => ({ text: x.text, p: +(x.prob || 0).toFixed(6) })),
   });
   logEv("pick", { i, text: o.text });
@@ -888,11 +836,11 @@ function pick(i) {
 }
 function acceptGhost(all) {
   const v = view(); if (!v.ghost) return false;
-  const chunk = all ? v.ghost : firstWords(v.ghost, 1);
+  const chunk = all ? v.ghost : (firstWords(v.ghost, 1) || (v.ghost.match(/^\s*\S+/) || [v.ghost])[0]);
   const partial = S.buffer.trim() !== "";
   const prefix = partial ? S.buffer.trim() : "";
-  const text = S.buffer + chunk; S.buffer = "";
-  commitChunk(text, "accepted", partial ? bitsOf(Math.min(1, v.prefixMass || 1)) : 0, prefix ? { prefix } : {});
+  S.buffer = "";
+  commitMixed(prefix, chunk, "accepted", partial ? bitsOf(Math.min(1, v.prefixMass != null ? v.prefixMass : 1)) : 0, prefix ? { prefix } : {});
   // Keep showing the rest of the grey text until new suggestions arrive.
   const rest = v.ghost.slice(chunk.length);
   if (S.sugg) S.sugg = Object.assign({}, S.sugg, { draft: draftText(), items: [], ghost: rest, H: 0 });
@@ -937,11 +885,11 @@ function refresh() {
   suggTimer = setTimeout(async () => {
     const ctl = suggCtl = new AbortController();
     try {
-      const r = await vllmSuggest(draft, ctl.signal, early => { if (!ctl.signal.aborted) { S.sugg = early; render(); } });
+      const r = await engineSuggest(draft, ctl.signal, early => { if (!ctl.signal.aborted) { S.sugg = early; render(); } });
       if (ctl.signal.aborted) return;
       S.sugg = r; S.err = null; S.warn = r.warning || ""; render();
     } catch (e) { if (e.name === "AbortError") return; S.err = friendlyErr(e); render(); }
-  }, 120);
+  }, 30);  // the server drops requests that a newer one supersedes, so little debouncing is needed
 }
 function friendlyErr(e) {
   const m = String(e && e.message || e);
@@ -969,11 +917,11 @@ function stats() {
   const secs = S.startT !== null && S.lastT !== null ? (S.lastT - S.startT) / 1000 : 0;
   const nb = S.noteBits || 0;
   const control = total + nb > 0 ? (human + nb) / (total + nb) : 0;
-  const sp = S.split || { writer: 0, assistant: 0, frame: 0 };
+  const sp = S.split || { writer: 0, assistant: 0 };
   const allHuman = human + nb + sp.writer, allBits = total + nb + sp.writer + sp.assistant;
   const controlAll = allBits > 0 ? allHuman / allBits : 0;
   return {
-    total, human, noteBits: nb, control, chatWriter: sp.writer, chatAssistant: sp.assistant, frame: sp.frame || 0,
+    total, human, noteBits: nb, control, chatWriter: sp.writer, chatAssistant: sp.assistant,
     allHuman, allBits, controlAll, by, choices, words, secs, pending,
     keystrokes: S.keystrokes, perKey: S.keystrokes ? human / S.keystrokes : 0,
     wpm: secs > 2 ? words / (secs / 60) : 0,
@@ -1003,8 +951,9 @@ function renderStatus(v) {
     bits.push(`<span>Choices appear at ≥ <span class="mono">${fmt(S.settings.thr)}</span> bits</span>`);
   } else if (S.mode === "assist" && S.hidden) bits.push(`<span>Suggestions hidden until you type again</span>`);
   else if (S.mode === "plain") bits.push(`<span>Plain typing: no suggestions. Every word is still scored.</span>`);
-  bits.push(`<span>${S.connected ? esc(S.settings.model) : "Not connected"}${S.sugg && S.sugg.ms != null ? ` · <span class="mono">${Math.round(S.sugg.ms)} ms</span>` : ""}</span>`);
+  bits.push(`<span>${S.connected ? esc(S.settings.model) : "Not connected"}${S.sugg && S.sugg.ms != null ? ` · <span class="mono" title="${S.sugg.serverMs != null ? `server ${Math.round(S.sugg.serverMs)} ms` : ""}">${Math.round(S.sugg.ms)} ms</span>` : ""}</span>`);
   if (S.warn) bits.push(`<span class="pill err">${esc(S.warn)}</span>`);
+
   $("status").innerHTML = bits.join("");
 }
 function pickLabel(i) { return S.settings.pickKeys === "alt" ? `${ALT}${i + 1}` : `${i + 1}`; }
@@ -1052,7 +1001,7 @@ function renderSplit(st) {
     <table><thead><tr><th>Part</th><th>Who</th><th>Bits</th><th>Share</th></tr></thead><tbody>
       ${rows.map(r => `<tr><td><i class="sw" style="background:${r[3]}"></i>${r[0]}</td><td>${r[1]}</td><td>${fmt(r[2])}</td><td>${Math.round(100 * r[2] / T)}%</td></tr>`).join("")}
     </tbody></table>
-    <p class="hint">You: <b class="mono">${fmt(st.allHuman)}</b> bits · AI: <b class="mono">${fmt(st.allBits - st.allHuman)}</b> bits. Template text and the fixed request wording (${fmt(st.frame)} bits) aren't counted.</p>
+    <p class="hint">You: <b class="mono">${fmt(st.allHuman)}</b> bits · AI: <b class="mono">${fmt(st.allBits - st.allHuman)}</b> bits. Template text and the fixed request wording aren't scored, since nobody chose them.</p>
   </div>`;
 }
 function renderStats() {
@@ -1096,7 +1045,7 @@ function renderStrip() {
 function sessionLog() {
   const st = stats();
   return {
-    app: "thoughtful-writing-bit-meter", version: 2, engine: "writing-prototypes tokens engine (Nov 2026)",
+    app: "thoughtful-writing-bit-meter", version: 2, engine: "writing engine (llm.thoughtful-ai.com, Nov 13 2026)", session: SESSION,
     condition: S.mode, model: S.settings.model, url: S.settings.url,
     settings: { thr: S.settings.thr, ghostMax: S.settings.ghostMax, k: S.settings.k, words: S.settings.words, pickKeys: S.settings.pickKeys },
     startedAt: S.startedAt, exportedAt: new Date().toISOString(),
@@ -1104,7 +1053,7 @@ function sessionLog() {
     noteBits: +st.noteBits.toFixed(3), notesMeasurements: S.notesHistory, split: S.split,
     summary: {
       totalBits: +st.total.toFixed(3), humanBits: +st.human.toFixed(3), control: +st.control.toFixed(4), controlNoSteering: st.total ? +(st.human / st.total).toFixed(4) : 0,
-      controlWithChat: +st.controlAll.toFixed(4), chatWriterBits: +st.chatWriter.toFixed(3), chatAssistantBits: +st.chatAssistant.toFixed(3), frameBits: +st.frame.toFixed(3),
+      controlWithChat: +st.controlAll.toFixed(4), chatWriterBits: +st.chatWriter.toFixed(3), chatAssistantBits: +st.chatAssistant.toFixed(3),
       keystrokes: st.keystrokes, humanBitsPerKeystroke: +st.perKey.toFixed(4), words: st.words,
       seconds: +st.secs.toFixed(1), wpm: +st.wpm.toFixed(1), choices: st.choices,
     },
@@ -1235,9 +1184,18 @@ async function sendChat() {
     const contextParts = [];
     if (notes) contextParts.push(`The writer's plan:\n${notes}`);
     if (draft) contextParts.push(`Current draft:\n${draft}`);
-    const system = "You are a thoughtful writing assistant. The writer is composing a text and has shared their plan and current draft below. "
-      + "Read them carefully, then help the writer: ask clarifying questions, point out gaps or unclear parts, and suggest directions. "
-      + "Keep your help focused and useful for the writing task.\n\n"
+    const system = "You are the Conversation Assistant for a thoughtful AI writing system. "
+      + "Help the user clarify and develop their own ideas. The human remains the author: "
+      + "do not write a complete essay or polished paragraph unless the user explicitly asks for an example or draft.\n\n"
+      + "Use the plan and draft supplied in the conversation as context. Ask one or two focused questions at a time about purpose, audience, main message, supporting ideas, tone, structure, or constraints. "
+      + "Adapt to what the user has already said; do not repeat questions or introduce major ideas not yet expressed. "
+      + "Present suggestions as possibilities, not decisions. Limit suggestions to two or three meaningful options.\n\n"
+      + "You may clarify ideas, identify gaps, compare directions, summarize understanding, and help organize the user's thoughts. "
+      + "Do not invent facts or evidence. If evidence is needed, ask the user for it or clearly mark it as something to verify.\n\n"
+      + "Periodically summarize in one sentence: \"So far, I understand... Is this accurate?\" "
+      + "If important information is still unclear, ask a focused follow-up. If the user's goal is sufficiently clear, do not continue asking unnecessary questions; "
+      + "say that there is enough context for the writing stage and do not generate the final writing.\n\n"
+      + "Keep replies concise, specific, and collaborative.\n\n"
       + (contextParts.length ? contextParts.join("\n\n") : "(The writer hasn't written anything yet.)");
     const messages = [{ role: "system", content: system }, ...S.chat.slice(0, thinkingIdx).filter(m => !m.thinking && !m.error).map(m => ({ role: m.role, content: m.content }))];
     const { text: reply, backend } = await chatReply(messages);
@@ -1302,7 +1260,7 @@ function bind() {
     const btn = $("genBtn"); btn.disabled = true; markKey();
     try {
       if (!S.connected) throw new Error("Not connected to the model server yet.");
-      const out = await vllmGenerate();
+      const out = (await engineGenerate((await enginePrefix(historyFor(), "assistant")) + draftText(), 120, 0.8)).replace(/\s+$/, "");
       const text = S.buffer + out; S.buffer = "";
       commitChunk(text, "generated", 0, {});
       S.err = null; logEv("generate", { chars: out.length });
@@ -1317,8 +1275,8 @@ function bind() {
   $("wordsOpt").addEventListener("change", () => { setS("words", +$("wordsOpt").value); refresh(); });
   $("pickKeys").addEventListener("change", () => { setS("pickKeys", $("pickKeys").value); render(); });
   $("showSrc").addEventListener("change", () => { S.settings.showSrc = $("showSrc").checked; render(); });
-  $("vurl").addEventListener("change", () => { setS("url", $("vurl").value.trim()); prefixCache.clear(); });
-  $("vmodel").addEventListener("change", () => { setS("model", $("vmodel").value.trim()); prefixCache.clear(); });
+  $("vurl").addEventListener("change", () => { setS("url", $("vurl").value.trim()); prefixCache.clear(); scoreCache.clear(); });
+  $("vmodel").addEventListener("change", () => { setS("model", $("vmodel").value.trim()); });
   $("connectBtn").addEventListener("click", () => connectServer());
   $("logPanel").addEventListener("toggle", renderLog);
   $("chatToggle").addEventListener("click", () => setChatOpen(!S.chatOpen));
@@ -1358,9 +1316,9 @@ async function connectServer() {
   S.settings.url = $("vurl").value.trim();
   S.connecting = true; render();
   try {
-    const id = await vllmConnect();
+    const id = await engineConnect();
     S.settings.model = id; $("vmodel").value = id;
-    S.connected = true; S.err = null; prefixCache.clear();
+    S.connected = true; S.err = null; prefixCache.clear(); scoreCache.clear(); lastAnswer = null;
     logEv("connect", { url: S.settings.url, model: id });
     $("backendHint").textContent = `Connected to ${S.settings.url} · ${id}`;
     updateNotes(); refresh();

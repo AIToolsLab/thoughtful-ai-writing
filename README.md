@@ -16,10 +16,10 @@ A human-centered AI writing tool that helps users compose text through interacti
 
 | Job | Model | Server |
 |---|---|---|
-| Writing suggestions, bit scores, the meter | Qwen 3.8 | Prof. Arnold's vLLM server, `https://vllm.thoughtful-ai.com` |
+| Writing suggestions, bit scores, the meter | Qwen 3.8 | Prof. Arnold's writing engine, `https://llm.thoughtful-ai.com` |
 | Chat replies | DeepSeek (falls back to Qwen) | Calvin's Open WebUI, through the local proxy |
 
-Predictions use the token engine from Prof. Arnold's [writing-prototypes](https://github.com/AIToolsLab/writing-prototypes) (`docs/llm.js`, `docs/engine-tokens.js`): chat-format prompts with thinking off, token healing for half-typed words, and whole-word options with probabilities.
+Predictions and scores use Prof. Arnold's writing engine from [writing-prototypes](https://github.com/AIToolsLab/writing-prototypes) (see `engine/MIGRATING.md`; the client code follows `docs/engine-tokens.js` and `docs/llm.js`). It replaced the vLLM server in November 2026. It reads your typing as characters, so half-typed words are handled on the server, it answers in 50–200 ms, and it offers whole-word options with the model's own probabilities. The page uses `/v1/template`, `/v1/continuations` and `/v1/score`, sends requests as `text/plain` with a session id per browser tab, and uses the engine's vLLM-compatible `/v1/completions` only to generate text (chat replies and Generate mode).
 
 ### Features
 
@@ -34,7 +34,7 @@ Predictions use the token engine from Prof. Arnold's [writing-prototypes](https:
 
 ### Usage
 
-Open `bit_meter.html` in a browser. It connects to the class Qwen server on load; the model name and response time appear under the writing box. If the server can't be reached, a banner says so and **Try again** reconnects. There is no offline model. For chat through DeepSeek, also follow the setup below.
+Open `bit_meter.html` in a browser. It connects to the writing engine on load; the model name and response time appear under the writing box. If the server can't be reached, a banner says so and **Try again** reconnects. There is no offline model. For chat through DeepSeek, also follow the setup below.
 
 ### How the bits are split (writer vs. AI)
 
@@ -44,7 +44,7 @@ The model reads one long prompt, in this order:
 2. the request with the writer's plan,
 3. the draft.
 
-`bit_meter.html` scores this whole prompt in one pass and adds up each token's bits by the part it falls in (each token belongs to its first non-space character):
+`bit_meter.html` scores each part given everything before it (the engine's `/v1/score`) and adds its bits to whoever supplied it (each token belongs to its first non-space character):
 
 | Part | Was (old tags) | Counted as |
 |---|---|---|
@@ -52,11 +52,11 @@ The model reads one long prompt, in this order:
 | Your plan | `<notes>` | you |
 | The draft, word by word | `<draft>` | you or AI, by how each word got in |
 | AI chat replies | `<assistant>` | AI |
-| Template markup and the fixed request wording | — | not counted |
+| Template markup and the fixed request wording | — | not scored |
 
 Each part is scored *given everything before it*. So if an AI reply suggests an idea and you then write it, that idea is counted once, as AI bits in the reply, and your draft gets cheaper. If you bring the idea yourself, it shows up as your bits.
 
-The meter shows **Human share of plan + text** (the original measure), **Human share including the chat**, and a **Bits by part** table. Each chat bubble shows its own bits. The parts always add up to the score of the whole prompt.
+The meter shows **Human share of plan + text** (the original measure), **Human share including the chat**, and a **Bits by part** table. Each chat bubble shows its own bits. Chat turns and the plan are scored once and cached, so typing only rescores the draft.
 
 Known issue: Qwen scores DeepSeek's replies, so a reply worded unlike Qwen counts as many AI bits even if none of it was used. Measuring only what the replies changed in the draft would fix this; it is a next step.
 
@@ -76,7 +76,7 @@ python notes_sweep.py examples/essay.txt examples/notes_versions.txt
 
 ### Chat & configuration
 
-The **Chat** panel (collapsible, VS Code-style) lets you talk to the model, and the conversation steers the writing suggestions. Chat prefers the school's locally-deployed **DeepSeek** API and falls back to the class vLLM server if it's unavailable.
+The **Chat** panel (collapsible, VS Code-style) lets you talk to the model, and the conversation steers the writing suggestions. Chat prefers the school's locally-deployed **DeepSeek** API and falls back to Qwen on the writing engine if it's unavailable.
 
 #### Setting up the DeepSeek chat backend
 
@@ -117,10 +117,10 @@ You should see: `DeepSeek CORS proxy running at http://localhost:3000`
 
 **Step 4 — Open the app**
 
-Open `bit_meter.html` in a browser. The Chat panel will now use DeepSeek (through the proxy) first, and fall back to the class vLLM server if DeepSeek is unreachable.
+Open `bit_meter.html` in a browser. The Chat panel will now use DeepSeek (through the proxy) first, and fall back to Qwen on the writing engine if DeepSeek is unreachable.
 
 > **Why two files?** `config.example.js` is committed as a template so anyone can clone the repo and copy it. `config.js` holds your private key and is ignored by git (see `.gitignore`), so your key is never uploaded to GitHub.
 
 ### Project status
 
-Working prototype for the senior project (final presentation December 2026). Predictions, scoring and the bit split run on the class Qwen server; the chat runs on DeepSeek when the proxy is set up.
+Working prototype for the senior project (final presentation December 2026). Predictions, scoring and the bit split run on the writing engine (Qwen 3.8); the chat runs on DeepSeek when the proxy is set up.

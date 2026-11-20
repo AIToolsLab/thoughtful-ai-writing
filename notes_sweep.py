@@ -2,7 +2,7 @@
 """How much should a writer put in the Thinking Box?
 
 Scores one finished text under several versions of the notes, from none to very
-detailed, using the class vLLM server. For each version it reports:
+detailed, using the writing engine (see qwen_chat.py). For each version it reports:
 
   note_bits   information in the plan itself, scored where the page puts it:
               inside the request "Help me write a short piece. Here is what I want to say: ..."
@@ -35,7 +35,7 @@ def score_version(base, model, text, notes):
     """Bits of the plan (inside the request) and of the text (as the reply), framed like the page."""
     notes = notes.strip()
     text_bits = qc.total_bits(qc.score_span(base, model, qc.chat_prefix(base, model, qc.history_for(notes)), text))
-    note_bits = qc.total_bits(qc.score_span(base, model, qc.turn_prefix(base, model, []) + qc.REQUEST_HEAD, notes)) if notes else 0.0
+    note_bits = qc.total_bits(qc.score_span(base, model, qc.prefix(base, [], "user") + qc.REQUEST_HEAD, notes)) if notes else 0.0
     return note_bits, text_bits
 
 
