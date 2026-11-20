@@ -803,7 +803,8 @@ function typeChar(c) {
   if (c === "\n") { if (S.buffer.trim()) commitTyped(S.buffer); S.buffer = ""; commitTyped("\n"); return; }
   if (/\s/.test(c)) {
     if (S.buffer.trim()) commitTyped(S.buffer);
-    S.buffer = (S.units.length && lastNorm() !== PARA) ? " " : "";
+    S.buffer = "";
+    if (S.units.length && lastNorm() !== PARA) commitTyped(" ");
     return;
   }
   if (/[.,;:!?"()“”]/.test(c)) {
